@@ -1,0 +1,54 @@
+{
+	"name": "Metadata_CSV",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "fauxuni-WorkspaceDefaultStorage",
+			"type": "LinkedServiceReference"
+		},
+		"parameters": {
+			"filename": {
+				"type": "string"
+			},
+			"container": {
+				"type": "string"
+			}
+		},
+		"folder": {
+			"name": "CSV"
+		},
+		"annotations": [],
+		"type": "DelimitedText",
+		"typeProperties": {
+			"location": {
+				"type": "AzureBlobFSLocation",
+				"fileName": {
+					"value": "@dataset().filename",
+					"type": "Expression"
+				},
+				"fileSystem": {
+					"value": "@dataset().container",
+					"type": "Expression"
+				}
+			},
+			"columnDelimiter": ",",
+			"escapeChar": "\\",
+			"firstRowAsHeader": true,
+			"quoteChar": "\""
+		},
+		"schema": [
+			{
+				"name": "Table",
+				"type": "String"
+			},
+			{
+				"name": "Directory",
+				"type": "String"
+			},
+			{
+				"name": "Filename",
+				"type": "String"
+			}
+		]
+	},
+	"type": "Microsoft.Synapse/workspaces/datasets"
+}

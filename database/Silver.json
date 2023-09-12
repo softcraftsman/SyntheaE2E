@@ -1,0 +1,25 @@
+{
+	"name": "Silver",
+	"properties": {
+		"Name": "Silver",
+		"EntityType": "DATABASE",
+		"Origin": {
+			"Type": "SPARK"
+		},
+		"Properties": {
+			"IsSyMSCDMDatabase": true
+		},
+		"Source": {
+			"Provider": "ADLS",
+			"Location": "abfss://dl-silver@fauxunihealth.dfs.core.windows.net/",
+			"Properties": {
+				"FormatType": "parquet",
+				"LinkedServiceName": "fauxuni-WorkspaceDefaultStorage"
+			}
+		},
+		"PublishStatus": "PUBLISHED",
+		"ObjectVersion": 1,
+		"ObjectId": "1f8c35d4-7cbc-494e-b7fa-7850227edbca"
+	},
+	"type": "DATABASE"
+}

@@ -1,0 +1,138 @@
+{
+	"name": "Patients",
+	"properties": {
+		"folder": {
+			"name": "Bronze To Silver"
+		},
+		"type": "MappingDataFlow",
+		"typeProperties": {
+			"sources": [
+				{
+					"dataset": {
+						"referenceName": "PatientBronze",
+						"type": "DatasetReference"
+					},
+					"name": "bronzeTable"
+				}
+			],
+			"sinks": [
+				{
+					"linkedService": {
+						"referenceName": "fauxuni-WorkspaceDefaultStorage",
+						"type": "LinkedServiceReference"
+					},
+					"name": "silverTable"
+				}
+			],
+			"transformations": [
+				{
+					"name": "AddColumnNames"
+				},
+				{
+					"name": "forceUpsert"
+				},
+				{
+					"name": "CastToDate"
+				},
+				{
+					"name": "DerivedColumns"
+				},
+				{
+					"name": "RemoveDuplicateRows"
+				}
+			],
+			"scriptLines": [
+				"source(output(",
+				"          Prop_0 as string,",
+				"          Prop_1 as string,",
+				"          Prop_2 as string,",
+				"          Prop_3 as string,",
+				"          Prop_4 as string,",
+				"          Prop_5 as string,",
+				"          Prop_6 as string,",
+				"          Prop_7 as string,",
+				"          Prop_8 as string,",
+				"          Prop_9 as string,",
+				"          Prop_10 as string,",
+				"          Prop_11 as string,",
+				"          Prop_12 as string,",
+				"          Prop_13 as string,",
+				"          Prop_14 as string,",
+				"          Prop_15 as string,",
+				"          Prop_16 as string,",
+				"          Prop_17 as string,",
+				"          Prop_18 as string,",
+				"          Prop_19 as string,",
+				"          Prop_20 as string,",
+				"          Prop_21 as string,",
+				"          Prop_22 as string,",
+				"          Prop_23 as string,",
+				"          Prop_24 as string,",
+				"          Prop_25 as string",
+				"     ),",
+				"     allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     ignoreNoFilesFound: false,",
+				"     format: 'parquet') ~> bronzeTable",
+				"bronzeTable select(mapColumn(",
+				"          Id = Prop_0,",
+				"          BirthDate = Prop_1,",
+				"          DeathDate = Prop_2,",
+				"          SSN = Prop_3,",
+				"          Drivers = Prop_4,",
+				"          Passport = Prop_5,",
+				"          Prefix = Prop_6,",
+				"          First = Prop_7,",
+				"          Last = Prop_8,",
+				"          Suffix = Prop_9,",
+				"          Maiden = Prop_10,",
+				"          Marital = Prop_11,",
+				"          Race = Prop_12,",
+				"          Ethnicity = Prop_13,",
+				"          Gender = Prop_14,",
+				"          BirthPlace = Prop_15,",
+				"          Address = Prop_16,",
+				"          City = Prop_17,",
+				"          State = Prop_18,",
+				"          County = Prop_19,",
+				"          FIPScountyCode = Prop_20,",
+				"          Zip = Prop_21,",
+				"          Lat = Prop_22,",
+				"          Long = Prop_23,",
+				"          Helthcare_Expenses = Prop_24,",
+				"          Healthcare_Coverage = Prop_25",
+				"     ),",
+				"     skipDuplicateMapInputs: true,",
+				"     skipDuplicateMapOutputs: true) ~> AddColumnNames",
+				"DerivedColumns alterRow(upsertIf(true())) ~> forceUpsert",
+				"AddColumnNames cast(output(",
+				"          BirthDate as date 'yyyy/MM/dd',",
+				"          DeathDate as date 'yyyy.MM.dd'",
+				"     ),",
+				"     errors: true) ~> CastToDate",
+				"RemoveDuplicateRows derive(Age = iif( not(isNull(BirthDate)), currentDate() - BirthDate, -1)) ~> DerivedColumns",
+				"CastToDate aggregate(groupBy(Id),",
+				"     each(match(name!='Id'), $$ = last($$))) ~> RemoveDuplicateRows",
+				"forceUpsert sink(allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     format: 'delta',",
+				"     fileSystem: 'dl-silver',",
+				"     folderPath: 'patients',",
+				"     mergeSchema: true,",
+				"     autoCompact: true,",
+				"     optimizedWrite: false,",
+				"     vacuum: 0,",
+				"     deletable: true,",
+				"     insertable: true,",
+				"     updateable: true,",
+				"     upsertable: true,",
+				"     keys:['Id'],",
+				"     umask: 0022,",
+				"     preCommands: [],",
+				"     postCommands: [],",
+				"     skipDuplicateMapInputs: true,",
+				"     skipDuplicateMapOutputs: true) ~> silverTable"
+			]
+		}
+	}
+}

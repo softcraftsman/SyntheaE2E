@@ -1,0 +1,112 @@
+{
+	"name": "Encounters",
+	"properties": {
+		"folder": {
+			"name": "Bronze To Silver"
+		},
+		"type": "MappingDataFlow",
+		"typeProperties": {
+			"sources": [
+				{
+					"dataset": {
+						"referenceName": "EncountersBronze",
+						"type": "DatasetReference"
+					},
+					"name": "bronzeTable"
+				}
+			],
+			"sinks": [
+				{
+					"linkedService": {
+						"referenceName": "fauxuni-WorkspaceDefaultStorage",
+						"type": "LinkedServiceReference"
+					},
+					"name": "silverTable"
+				}
+			],
+			"transformations": [
+				{
+					"name": "AddColumnNames",
+					"description": "assport, Prefix, First, Last, Suffix, Maiden, Marital, Race, Ethnicity, Gender'"
+				},
+				{
+					"name": "forceUpsert"
+				},
+				{
+					"name": "CastDates"
+				},
+				{
+					"name": "DerivedColumns"
+				}
+			],
+			"scriptLines": [
+				"source(output(",
+				"          Prop_0 as string,",
+				"          Prop_1 as string,",
+				"          Prop_2 as string,",
+				"          Prop_3 as string,",
+				"          Prop_4 as string,",
+				"          Prop_5 as string,",
+				"          Prop_6 as string,",
+				"          Prop_7 as string,",
+				"          Prop_8 as string,",
+				"          Prop_9 as string,",
+				"          Prop_10 as string,",
+				"          Prop_11 as string,",
+				"          Prop_12 as string,",
+				"          Prop_13 as string,",
+				"          Prop_14 as string",
+				"     ),",
+				"     allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     ignoreNoFilesFound: false,",
+				"     format: 'parquet') ~> bronzeTable",
+				"bronzeTable select(mapColumn(",
+				"          Id = Prop_0,",
+				"          Start = Prop_1,",
+				"          Stop = Prop_2,",
+				"          Patient = Prop_3,",
+				"          Organization = Prop_4,",
+				"          Provider = Prop_5,",
+				"          Payer = Prop_6,",
+				"          EncounterClass = Prop_7,",
+				"          Code = Prop_8,",
+				"          Description = Prop_9,",
+				"          Base_Encounter_Cost = Prop_10,",
+				"          Total_Claim_Cost = Prop_11,",
+				"          Payer_Coverage = Prop_12,",
+				"          ReasonCode = Prop_13,",
+				"          ReasonDescription = Prop_14",
+				"     ),",
+				"     skipDuplicateMapInputs: true,",
+				"     skipDuplicateMapOutputs: true) ~> AddColumnNames",
+				"DerivedColumns alterRow(upsertIf(true())) ~> forceUpsert",
+				"AddColumnNames cast(output(",
+				"          Start as timestamp 'yyyy.MM.dd HH:mm:ss',",
+				"          Stop as timestamp 'yyyy.MM.dd HH:mm:ss'",
+				"     ),",
+				"     errors: true) ~> CastDates",
+				"CastDates derive(EncounterLength = Stop-Start) ~> DerivedColumns",
+				"forceUpsert sink(allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     format: 'delta',",
+				"     fileSystem: 'dl-silver',",
+				"     folderPath: 'encounters',",
+				"     mergeSchema: false,",
+				"     autoCompact: false,",
+				"     optimizedWrite: false,",
+				"     vacuum: 0,",
+				"     deletable: true,",
+				"     insertable: false,",
+				"     updateable: false,",
+				"     upsertable: true,",
+				"     keys:['Id'],",
+				"     umask: 0022,",
+				"     preCommands: [],",
+				"     postCommands: [],",
+				"     skipDuplicateMapInputs: true,",
+				"     skipDuplicateMapOutputs: true) ~> silverTable"
+			]
+		}
+	}
+}

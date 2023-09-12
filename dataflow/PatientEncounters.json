@@ -1,0 +1,163 @@
+{
+	"name": "PatientEncounters",
+	"properties": {
+		"folder": {
+			"name": "Silver to Gold"
+		},
+		"type": "MappingDataFlow",
+		"typeProperties": {
+			"sources": [
+				{
+					"linkedService": {
+						"referenceName": "fauxuni-WorkspaceDefaultStorage",
+						"type": "LinkedServiceReference"
+					},
+					"name": "Patients"
+				},
+				{
+					"linkedService": {
+						"referenceName": "fauxuni-WorkspaceDefaultStorage",
+						"type": "LinkedServiceReference"
+					},
+					"name": "Encounters"
+				}
+			],
+			"sinks": [
+				{
+					"linkedService": {
+						"referenceName": "fauxuni-WorkspaceDefaultStorage",
+						"type": "LinkedServiceReference"
+					},
+					"name": "WriteToGold"
+				}
+			],
+			"transformations": [
+				{
+					"name": "PatientEncounters"
+				},
+				{
+					"name": "SlimPatientEncounters"
+				}
+			],
+			"scriptLines": [
+				"source(output(",
+				"          Id as string,",
+				"          BirthDate as string,",
+				"          DeathDate as string,",
+				"          SSN as string,",
+				"          Drivers as string,",
+				"          Passport as string,",
+				"          Prefix as string,",
+				"          First as string,",
+				"          Last as string,",
+				"          Suffix as string,",
+				"          Maiden as string,",
+				"          Marital as string,",
+				"          Race as string,",
+				"          Ethnicity as string,",
+				"          Gender as string,",
+				"          BirthPlace as string,",
+				"          Address as string,",
+				"          City as string,",
+				"          State as string,",
+				"          County as string,",
+				"          FIPScountyCode as string,",
+				"          Zip as string,",
+				"          Lat as string,",
+				"          Long as string,",
+				"          Helthcare_Expenses as string,",
+				"          Healthcare_Coverage as string",
+				"     ),",
+				"     allowSchemaDrift: false,",
+				"     validateSchema: false,",
+				"     limit: 100,",
+				"     ignoreNoFilesFound: true,",
+				"     format: 'delta',",
+				"     fileSystem: 'dl-silver',",
+				"     folderPath: 'patients') ~> Patients",
+				"source(output(",
+				"          Id as string,",
+				"          Start as timestamp,",
+				"          Stop as timestamp,",
+				"          Patient as string,",
+				"          Organization as string,",
+				"          Provider as string,",
+				"          Payer as string,",
+				"          EncounterClass as string,",
+				"          Code as string,",
+				"          Description as string,",
+				"          Base_Encounter_Cost as string,",
+				"          Total_Claim_Cost as string,",
+				"          Payer_Coverage as string,",
+				"          ReasonCode as string,",
+				"          ReasonDescription as string,",
+				"          EncounterLength as long",
+				"     ),",
+				"     allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     limit: 100,",
+				"     ignoreNoFilesFound: true,",
+				"     format: 'delta',",
+				"     fileSystem: 'dl-silver',",
+				"     folderPath: 'encounters') ~> Encounters",
+				"Patients, Encounters join(Patients@Id == Patient,",
+				"     joinType:'inner',",
+				"     matchType:'exact',",
+				"     ignoreSpaces: false,",
+				"     broadcast: 'auto')~> PatientEncounters",
+				"PatientEncounters select(mapColumn(",
+				"          Id = Patients@Id,",
+				"          SSN,",
+				"          Prefix,",
+				"          First,",
+				"          Last,",
+				"          Suffix,",
+				"          Maiden,",
+				"          Marital,",
+				"          Race,",
+				"          Ethnicity,",
+				"          Gender,",
+				"          Id = Encounters@Id,",
+				"          Start,",
+				"          Stop,",
+				"          Patient,",
+				"          Organization,",
+				"          Provider,",
+				"          Payer,",
+				"          EncounterClass,",
+				"          Code,",
+				"          Description,",
+				"          Base_Encounter_Cost,",
+				"          Total_Claim_Cost,",
+				"          Payer_Coverage,",
+				"          ReasonCode,",
+				"          ReasonDescription,",
+				"          EncounterLength",
+				"     ),",
+				"     skipDuplicateMapInputs: true,",
+				"     skipDuplicateMapOutputs: true) ~> SlimPatientEncounters",
+				"SlimPatientEncounters sink(allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     format: 'delta',",
+				"     compressionType: 'snappy',",
+				"     compressionLevel: 'Fastest',",
+				"     fileSystem: 'dl-gold',",
+				"     folderPath: 'PatientEncounters',",
+				"     overwrite: true,",
+				"     mergeSchema: false,",
+				"     autoCompact: false,",
+				"     optimizedWrite: false,",
+				"     vacuum: 0,",
+				"     deletable: false,",
+				"     insertable: true,",
+				"     updateable: false,",
+				"     upsertable: false,",
+				"     umask: 0022,",
+				"     preCommands: [],",
+				"     postCommands: [],",
+				"     skipDuplicateMapInputs: true,",
+				"     skipDuplicateMapOutputs: true) ~> WriteToGold"
+			]
+		}
+	}
+}

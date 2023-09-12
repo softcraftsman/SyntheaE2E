@@ -1,0 +1,270 @@
+{
+	"name": "3 - Using Kerchunk",
+	"properties": {
+		"folder": {
+			"name": "NOAA"
+		},
+		"nbformat": 4,
+		"nbformat_minor": 2,
+		"bigDataPool": {
+			"referenceName": "smallSpark",
+			"type": "BigDataPoolReference"
+		},
+		"sessionProperties": {
+			"driverMemory": "28g",
+			"driverCores": 4,
+			"executorMemory": "28g",
+			"executorCores": 4,
+			"numExecutors": 1,
+			"runAsWorkspaceSystemIdentity": true,
+			"conf": {
+				"spark.dynamicAllocation.enabled": "true",
+				"spark.dynamicAllocation.minExecutors": "1",
+				"spark.dynamicAllocation.maxExecutors": "3",
+				"spark.autotune.trackingId": "56d1a366-de73-448c-9fc9-66c4fe0e32f7"
+			}
+		},
+		"metadata": {
+			"saveOutput": true,
+			"synapse_widget": {
+				"version": "0.1"
+			},
+			"enableDebugMode": false,
+			"kernelspec": {
+				"name": "synapse_pyspark",
+				"display_name": "Synapse PySpark"
+			},
+			"language_info": {
+				"name": "python"
+			},
+			"a365ComputeOptions": {
+				"id": "/subscriptions/de4c6b08-3d24-452b-80f7-97b7ce4e37d1/resourceGroups/Healthcare/providers/Microsoft.Synapse/workspaces/fauxuni/bigDataPools/smallSpark",
+				"name": "smallSpark",
+				"type": "Spark",
+				"endpoint": "https://fauxuni.dev.azuresynapse.net/livyApi/versions/2019-11-01-preview/sparkPools/smallSpark",
+				"auth": {
+					"type": "AAD",
+					"authResource": "https://dev.azuresynapse.net",
+					"authHeader": null
+				},
+				"sparkVersion": "3.3",
+				"nodeCount": 10,
+				"cores": 4,
+				"memory": 28,
+				"extraHeader": null
+			},
+			"sessionKeepAliveTimeout": 30
+		},
+		"cells": [
+			{
+				"cell_type": "markdown",
+				"source": [
+					"## Using Kerchunk\n",
+					"\n",
+					"In this notebook, we'll use a Kerchunk index file to speed up the *metadata reading* for a large collection of NetCDF files. The actual data will still be in the original NetCDF files.\n",
+					"\n",
+					"## Kerchunk Background\n",
+					"\n",
+					"In the last notebook, we saw that accessing data from the NetCDF file over the network was slow, in part because it was making a bunch of HTTP requests just to read some metadata that's scattered around the NetCDF file. With a Kerchunk index file, you get to bypass all that seeking around for metadata: it's already been extracted into the index file. While that's maybe not a huge deal for a *single* NetCDF file, it matters a bunch when you're dealing with thousands of NetCDF files (2 seconds per file * 1,000 files = ~1 hours *just to read metadata*)."
+				]
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"import adlfs\n",
+					"import fsspec\n",
+					"import xarray as xr\n",
+					"\n",
+					"# force xarray to import everything\n",
+					"at = xr.tutorial.open_dataset(\"air_temperature\");"
+				]
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"at"
+				],
+				"execution_count": 5
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"tags": []
+				},
+				"source": [
+					"%%time\n",
+					"m = fsspec.get_mapper(\n",
+					"    \"reference://\",\n",
+					"    fo=\"abfs://ciroh/short-range-channel_rt-kerchunk/reference.json\",\n",
+					"    remote_options={\"account_name\": \"noaanwm\"},\n",
+					"    target_options={\"account_name\": \"noaanwm\"},\n",
+					"    skip_instance_cache=True,\n",
+					")\n",
+					"\n",
+					"channel_rt = xr.open_dataset(m, engine=\"zarr\", consolidated=False, chunks={\"time\": 1})\n",
+					"channel_rt"
+				],
+				"execution_count": 4
+			},
+			{
+				"cell_type": "markdown",
+				"source": [
+					"You'll notice we're using the `zarr` engine for xarray. That's just a convenient way to expose Kerchunk indexed data to anything that can read Zarr (like xarray), without having to write a dedicated \"kerchunk\" reader. This actually exposes a bit about how Kerchunk works. Our \"mapper\", `m` has all of the metadata already in-memory.\n",
+					"\n",
+					"Zarr uses a simple dictionary-like interface with well-known keys. You can get the global attributes at `.zattrs`."
+				]
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"tags": []
+				},
+				"source": [
+					"import json\n",
+					"\n",
+					"json.loads(m[\".zattrs\"])"
+				]
+			},
+			{
+				"cell_type": "markdown",
+				"source": [
+					"Or the attributes for a specific array:"
+				]
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"tags": []
+				},
+				"source": [
+					"json.loads(m[\"streamflow/.zattrs\"])"
+				]
+			},
+			{
+				"cell_type": "markdown",
+				"source": [
+					"Those attributes saved in the Kerchunk index file, and so don't require any (additional) HTTP requests to get. But we *don't* want to re-save the large data variables, since we don't want to host the data twice. So what happens when you want to read a data variable? Well, we can look at the `references` attribute backing this mapping to find out."
+				]
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"tags": []
+				},
+				"source": [
+					"m.fs.references[\"streamflow/0.0\"]"
+				]
+			},
+			{
+				"cell_type": "markdown",
+				"source": [
+					"In a typical Zarr dataset, accessing an array at `<name>/0.0` would give you the actual bytes for the data at that location. But recall that with Kerchunk the original data is buried in some NetCDF file. Kerchunk has extracted three pieces of information:\n",
+					"\n",
+					"1. The URL where this chunk of data comes from\n",
+					"2. The *offset* within that file\n",
+					"3. The *size* of the chunk of data, in bytes, on disk\n",
+					"\n",
+					"Thanks to HTTP range requests (the same thing that powers streaming video) we can request just the subset of the file we need. When a high-level library like xarray asks the data in that chunk, this toolchain (of zarr, fsspec, and adlfs) will make the HTTP range request in the background and deliver the bytes."
+				]
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"tags": []
+				},
+				"source": [
+					"import seaborn as sns\n",
+					"\n",
+					"chunk = channel_rt.streamflow.isel(time=0).compute()\n",
+					"sns.displot(chunk[chunk > 0], log_scale=True);"
+				]
+			},
+			{
+				"cell_type": "markdown",
+				"source": [
+					"One very important caveat: because Kerchunk is just an index on the existing data, we inherit all of the limitations of its chunking structure. This datsaet is chunked by hour along `time`. We'll return to this later."
+				]
+			},
+			{
+				"cell_type": "markdown",
+				"source": [
+					"I've also created Kerchunk indexes for `land` and `forcing`:"
+				]
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"tags": []
+				},
+				"source": [
+					"%%time\n",
+					"import requests\n",
+					"\n",
+					"fo = requests.get(\n",
+					"    \"https://noaanwm.blob.core.windows.net/ciroh/short-range-land-kerchunk/reference.json\"\n",
+					").json()\n",
+					"m = fsspec.get_mapper(\n",
+					"    \"reference://\",\n",
+					"    fo=fo,\n",
+					"    remote_options={\"account_name\": \"noaanwm\"},\n",
+					"    target_options={\"account_name\": \"noaanwm\"},\n",
+					")\n",
+					"\n",
+					"land = xr.open_dataset(m, engine=\"zarr\", consolidated=False, chunks={\"time\": 1})\n",
+					"land"
+				]
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"tags": []
+				},
+				"source": [
+					"%%time\n",
+					"import requests\n",
+					"\n",
+					"fo = requests.get(\n",
+					"    \"https://noaanwm.blob.core.windows.net/ciroh/short-range-forcing-kerchunk/reference.json\"\n",
+					").json()\n",
+					"m = fsspec.get_mapper(\n",
+					"    \"reference://\",\n",
+					"    fo=fo,\n",
+					"    remote_options={\"account_name\": \"noaanwm\"},\n",
+					"    target_options={\"account_name\": \"noaanwm\"},\n",
+					")\n",
+					"\n",
+					"forcing = xr.open_dataset(m, engine=\"zarr\", consolidated=False, chunks={\"time\": 1})\n",
+					"forcing"
+				]
+			},
+			{
+				"cell_type": "markdown",
+				"source": [
+					"Play around with these for a bit."
+				]
+			}
+		]
+	}
+}

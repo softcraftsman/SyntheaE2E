@@ -1,0 +1,145 @@
+{
+	"name": "Copy from on-prem to Bronze",
+	"properties": {
+		"activities": [
+			{
+				"name": "Metadata",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "DelimitedTextSource",
+						"storeSettings": {
+							"type": "AzureBlobFSReadSettings",
+							"recursive": false,
+							"enablePartitionDiscovery": false
+						},
+						"formatSettings": {
+							"type": "DelimitedTextReadSettings"
+						}
+					},
+					"dataset": {
+						"referenceName": "Metadata_CSV",
+						"type": "DatasetReference",
+						"parameters": {
+							"filename": "metadata_bronze.csv",
+							"container": "dl-bronze"
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "Loop over Tables",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Metadata",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Metadata').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "Copy CSV into Parquet",
+							"type": "Copy",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "DelimitedTextSource",
+									"storeSettings": {
+										"type": "AzureFileStorageReadSettings",
+										"recursive": true,
+										"wildcardFolderPath": {
+											"value": "@item().directory",
+											"type": "Expression"
+										},
+										"wildcardFileName": {
+											"value": "@item().filename",
+											"type": "Expression"
+										},
+										"enablePartitionDiscovery": false
+									},
+									"formatSettings": {
+										"type": "DelimitedTextReadSettings"
+									}
+								},
+								"sink": {
+									"type": "ParquetSink",
+									"storeSettings": {
+										"type": "AzureBlobFSWriteSettings",
+										"copyBehavior": "FlattenHierarchy"
+									},
+									"formatSettings": {
+										"type": "ParquetWriteSettings"
+									}
+								},
+								"enableStaging": false,
+								"translator": {
+									"type": "TabularTranslator",
+									"typeConversion": true,
+									"typeConversionSettings": {
+										"allowDataTruncation": true,
+										"treatBooleanAsNumber": false
+									}
+								}
+							},
+							"inputs": [
+								{
+									"referenceName": "tableCSV",
+									"type": "DatasetReference",
+									"parameters": {
+										"directory": {
+											"value": "@item().directory",
+											"type": "Expression"
+										},
+										"filename": "@item().filename",
+										"firstRowAsHeader": false
+									}
+								}
+							],
+							"outputs": [
+								{
+									"referenceName": "BronzeParquet",
+									"type": "DatasetReference",
+									"parameters": {
+										"Table": {
+											"value": "@item().table",
+											"type": "Expression"
+										}
+									}
+								}
+							]
+						}
+					]
+				}
+			}
+		],
+		"annotations": [],
+		"lastPublishTime": "2023-09-08T02:16:17Z"
+	},
+	"type": "Microsoft.Synapse/workspaces/pipelines"
+}

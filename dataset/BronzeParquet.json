@@ -1,0 +1,32 @@
+{
+	"name": "BronzeParquet",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "fauxuni-WorkspaceDefaultStorage",
+			"type": "LinkedServiceReference"
+		},
+		"parameters": {
+			"Table": {
+				"type": "string"
+			}
+		},
+		"folder": {
+			"name": "Bronze"
+		},
+		"annotations": [],
+		"type": "Parquet",
+		"typeProperties": {
+			"location": {
+				"type": "AzureBlobFSLocation",
+				"folderPath": {
+					"value": "@dataset().Table",
+					"type": "Expression"
+				},
+				"fileSystem": "dl-bronze"
+			},
+			"compressionCodec": "snappy"
+		},
+		"schema": []
+	},
+	"type": "Microsoft.Synapse/workspaces/datasets"
+}
