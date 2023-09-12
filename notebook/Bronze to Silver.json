@@ -21,14 +21,11 @@
 				"spark.dynamicAllocation.enabled": "false",
 				"spark.dynamicAllocation.minExecutors": "2",
 				"spark.dynamicAllocation.maxExecutors": "2",
-				"spark.autotune.trackingId": "06f46c2b-3a87-44e7-ae97-6a10a0b4fbec"
+				"spark.autotune.trackingId": "f25b5d03-c9ce-4906-addc-55a96d65e2f8"
 			}
 		},
 		"metadata": {
 			"saveOutput": true,
-			"synapse_widget": {
-				"version": "0.1"
-			},
 			"enableDebugMode": false,
 			"kernelspec": {
 				"name": "synapse_pyspark",
@@ -44,14 +41,13 @@
 				"endpoint": "https://fauxuni.dev.azuresynapse.net/livyApi/versions/2019-11-01-preview/sparkPools/smallSpark",
 				"auth": {
 					"type": "AAD",
-					"authResource": "https://dev.azuresynapse.net",
-					"authHeader": null
+					"authResource": "https://dev.azuresynapse.net"
 				},
 				"sparkVersion": "3.3",
 				"nodeCount": 10,
 				"cores": 4,
 				"memory": 28,
-				"extraHeader": null
+				"automaticScaleJobs": false
 			},
 			"sessionKeepAliveTimeout": 30
 		},
@@ -108,7 +104,8 @@
 					"dfPatients = spark.read.parquet(patientsFile)\r\n",
 					"dfPatients.show(n=5)\r\n",
 					"dfPatients.printSchema()"
-				]
+				],
+				"execution_count": null
 			},
 			{
 				"cell_type": "code",
@@ -168,7 +165,8 @@
 					"\r\n",
 					"dfSilverPatients.show()\r\n",
 					""
-				]
+				],
+				"execution_count": null
 			},
 			{
 				"cell_type": "code",
@@ -243,7 +241,8 @@
 					"     \r\n",
 					"\r\n",
 					""
-				]
+				],
+				"execution_count": null
 			}
 		]
 	}
