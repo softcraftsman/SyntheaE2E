@@ -7,10 +7,6 @@
 			"metadata": "Workspace name",
 			"defaultValue": "fauxuni"
 		},
-		"AzureDataLakeStorage1_accountKey": {
-			"type": "secureString",
-			"metadata": "Secure string for 'accountKey' of 'AzureDataLakeStorage1'"
-		},
 		"fauxuni-WorkspaceDefaultSqlServer_connectionString": {
 			"type": "secureString",
 			"metadata": "Secure string for 'connectionString' of 'fauxuni-WorkspaceDefaultSqlServer'",
@@ -20,21 +16,17 @@
 			"type": "secureString",
 			"metadata": "Secure string for 'connectionString' of 'fauxuni_onprem_filestorage'"
 		},
-		"AzureDataLakeStorage1_properties_typeProperties_url": {
-			"type": "string",
-			"defaultValue": "https://fauxunistorage.dfs.core.windows.net/"
-		},
 		"fauxuni-WorkspaceDefaultStorage_properties_typeProperties_url": {
 			"type": "string",
 			"defaultValue": "https://fauxunihealth.dfs.core.windows.net"
 		},
-		"sample-diabetes_sasUri": {
-			"type": "secureString",
-			"metadata": "Secure string for 'sasUri' of 'sample-diabetes'"
-		},
 		"fauxunihealth_properties_typeProperties_url": {
 			"type": "string",
 			"defaultValue": "https://fauxunihealth.dfs.core.windows.net/"
+		},
+		"sample-diabetes_sasUri": {
+			"type": "secureString",
+			"metadata": "Secure string for 'sasUri' of 'sample-diabetes'"
 		}
 	},
 	"variables": {
@@ -279,7 +271,6 @@
 			},
 			"dependsOn": [
 				"[concat(variables('workspaceId'), '/dataflows/Patients')]",
-				"[concat(variables('workspaceId'), '/integrationRuntimes/AutoResolveIntegrationRuntime')]",
 				"[concat(variables('workspaceId'), '/dataflows/Encounters')]"
 			]
 		},
@@ -758,29 +749,6 @@
 			]
 		},
 		{
-			"name": "[concat(parameters('workspaceName'), '/AzureDataLakeStorage1')]",
-			"type": "Microsoft.Synapse/workspaces/linkedServices",
-			"apiVersion": "2019-06-01-preview",
-			"properties": {
-				"annotations": [],
-				"type": "AzureBlobFS",
-				"typeProperties": {
-					"url": "[parameters('AzureDataLakeStorage1_properties_typeProperties_url')]",
-					"accountKey": {
-						"type": "SecureString",
-						"value": "[parameters('AzureDataLakeStorage1_accountKey')]"
-					}
-				},
-				"connectVia": {
-					"referenceName": "AutoResolveIntegrationRuntime",
-					"type": "IntegrationRuntimeReference"
-				}
-			},
-			"dependsOn": [
-				"[concat(variables('workspaceId'), '/integrationRuntimes/AutoResolveIntegrationRuntime')]"
-			]
-		},
-		{
 			"name": "[concat(parameters('workspaceName'), '/fauxuni-WorkspaceDefaultSqlServer')]",
 			"type": "Microsoft.Synapse/workspaces/linkedServices",
 			"apiVersion": "2019-06-01-preview",
@@ -833,6 +801,25 @@
 				"typeProperties": {
 					"connectionString": "[parameters('fauxuni_onprem_filestorage_connectionString')]",
 					"fileShare": "synthea-csv"
+				},
+				"connectVia": {
+					"referenceName": "AutoResolveIntegrationRuntime",
+					"type": "IntegrationRuntimeReference"
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/integrationRuntimes/AutoResolveIntegrationRuntime')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/fauxunihealth')]",
+			"type": "Microsoft.Synapse/workspaces/linkedServices",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"annotations": [],
+				"type": "AzureBlobFS",
+				"typeProperties": {
+					"url": "[parameters('fauxunihealth_properties_typeProperties_url')]"
 				},
 				"connectVia": {
 					"referenceName": "AutoResolveIntegrationRuntime",
@@ -1103,7 +1090,7 @@
 						"     ignoreSpaces: false,",
 						"     broadcast: 'auto')~> PatientEncounters",
 						"PatientEncounters select(mapColumn(",
-						"          Id = Patients@Id,",
+						"          Patient = Patients@Id,",
 						"          SSN,",
 						"          Prefix,",
 						"          First,",
@@ -1114,10 +1101,9 @@
 						"          Race,",
 						"          Ethnicity,",
 						"          Gender,",
-						"          Id = Encounters@Id,",
+						"          Encounter = Encounters@Id,",
 						"          Start,",
 						"          Stop,",
-						"          Patient,",
 						"          Organization,",
 						"          Provider,",
 						"          Payer,",
@@ -1312,6 +1298,86 @@
 			"properties": {
 				"type": "ManagedIdentity",
 				"typeProperties": {}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/ExternalDataSources')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"content": {
+					"query": "create SCHEMA silver;\ncreate SCHEMA gold;\n\nCREATE EXTERNAL FILE FORMAT [DELTA] WITH\n(\n\tFORMAT_TYPE = DELTA\n)\n\nCREATE EXTERNAL DATA SOURCE Silver WITH\n(\n\tLOCATION = 'https://fauxunihealth.blob.core.windows.net/dl-silver'\n)\n\nCREATE EXTERNAL DATA SOURCE Gold WITH\n(\n\tLOCATION = 'https://fauxunihealth.blob.core.windows.net/dl-gold'\n)\n\n",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "ServerlessSQL",
+						"poolName": "Built-in"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/Gold External Tables')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"content": {
+					"query": "\nDROP EXTERNAL TABLE [gold].[PatientEncounters]\nCREATE EXTERNAL TABLE [gold].[PatientEncounters]\n(\n\t \tPatient VARCHAR(64),\n\t \tSSN VARCHAR(64),\n\t\tPrefix VARCHAR(64),\n\t\tFirst VARCHAR(64),\n\t\tLast VARCHAR(64),\n\t\tSuffix VARCHAR(64),\n\t\tMaiden VARCHAR(64),\n\t\tMarital VARCHAR(64),\n\t\tRace VARCHAR(64),\n\t\tEthnicity VARCHAR(64),\n\t\tGender VARCHAR(64),\n\t\tEncounter VARCHAR(64),\n\t\tStart VARCHAR(64),\n\t\tStop VARCHAR(64),\n\t\tOrganization VARCHAR(64),\n\t\tProvider VARCHAR(64),\n\t\tPayer VARCHAR(64),\n\t\tEncounterClass VARCHAR(64),\n\t\tCode VARCHAR(64),\n\t\tDescription VARCHAR(64),\n\t\tBase_Encounter_Cost VARCHAR(64),\n\t\tTotal_Claim_Cost VARCHAR(64),\n\t\tPayer_Coverage VARCHAR(64),\n\t\tReasonCode VARCHAR(64),\n\t\tReasonDescription VARCHAR(64),\n\t\tEncounterLength VARCHAR(64)\n)\nWITH\n(\n\tLOCATION = '/PatientEncounters',\n\tDATA_SOURCE = [Gold],\n\tFILE_FORMAT = [DELTA]\n)",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "ServerlessSQL",
+						"poolName": "Built-in"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/SQL script 1')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"content": {
+					"query": "\n/*\nselect BirthDate from Patients\n\nSELECT Id AS [rows]\nFROM OPENROWSET( \n    BULK '/**', \n    DATA_SOURCE = 'Silver',\n    FORMAT='delta' ) patients\n\nSELECT\nnyc.filename() AS [filename],COUNT_BIG(*) AS [rows]\nFROM\nOPENROWSET(\n    BULK 'parquet/taxi/year=2017/month=9/*.parquet',\n    DATA_SOURCE = 'SqlOnDemandDemo',\n    FORMAT='PARQUET'\n) nyc\nGROUP BY nyc.filename()\n*/",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "Silver",
+						"poolName": "Built-in"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/Silver External Tables')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"content": {
+					"query": "\nDROP EXTERNAL TABLE [silver].[patients]\nCREATE EXTERNAL TABLE [silver].[patients]\n(\n\t[Id] VARCHAR(64),\n\tBirthDate\tDATE,\n\tDeathDate\tDATE,\n\tSSN\t\tVARCHAR(12),\n\tDrivers\tVARCHAR(2000),\n\tPassport\tVARCHAR(2000),\n\tPrefix\tVARCHAR(10),\n\tFirst\tVARCHAR(64),\n\tLast\tVARCHAR(64),\n\tSuffix\tVARCHAR(64),\n\tMaiden\tVARCHAR(64),\n\tMarital\tVARCHAR(64),\n\tRace\tVARCHAR(64),\n\tEthnicity\tVARCHAR(64),\n\tGender\tCHAR(2),\n\tBirthPlace\tVARCHAR(64),\n\tAddress\tVARCHAR(64),\n\tCity\tVARCHAR(64),\n\tState\tVARCHAR(64),\n\tCounty\tVARCHAR(64),\n\tFIPScountyCode\tVARCHAR(64),\n\tZip\t\tVARCHAR(64),\n\tLat\t\tVARCHAR(64),\n\tLong\tVARCHAR(64),\n\tHealthcare_Expenses\tVARCHAR(64),\n\tHealthcare_Coverage\tVARCHAR(64),\n\tIncome\tVARCHAR(64)\n)\nWITH\n(\n\tLOCATION = '/patients',\n\tDATA_SOURCE = [Silver],\n\tFILE_FORMAT = [DELTA]\n)\n\nDROP EXTERNAL TABLE [silver].[encounters]\nCREATE EXTERNAL TABLE [silver].[encounters]\n(\n\t [Id] VARCHAR(64)\n)\nWITH\n(\n\tLOCATION = '/encounters',\n\tDATA_SOURCE = [Silver],\n\tFILE_FORMAT = [DELTA]\n)\n",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "ServerlessSQL",
+						"poolName": "Built-in"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
 			},
 			"dependsOn": []
 		},
@@ -2166,123 +2232,6 @@
 			},
 			"dependsOn": [],
 			"location": "eastus"
-		},
-		{
-			"name": "[concat(parameters('workspaceName'), '/SQL script 1')]",
-			"type": "Microsoft.Synapse/workspaces/sqlscripts",
-			"apiVersion": "2019-06-01-preview",
-			"properties": {
-				"content": {
-					"query": "\n/*\nselect BirthDate from Patients\n\nSELECT Id AS [rows]\nFROM OPENROWSET( \n    BULK '/**', \n    DATA_SOURCE = 'Silver',\n    FORMAT='delta' ) patients\n\nSELECT\nnyc.filename() AS [filename],COUNT_BIG(*) AS [rows]\nFROM\nOPENROWSET(\n    BULK 'parquet/taxi/year=2017/month=9/*.parquet',\n    DATA_SOURCE = 'SqlOnDemandDemo',\n    FORMAT='PARQUET'\n) nyc\nGROUP BY nyc.filename()\n*/",
-					"metadata": {
-						"language": "sql"
-					},
-					"currentConnection": {
-						"databaseName": "Silver",
-						"poolName": "Built-in"
-					},
-					"resultLimit": 5000
-				},
-				"type": "SqlQuery"
-			},
-			"dependsOn": []
-		},
-		{
-			"name": "[concat(parameters('workspaceName'), '/fauxunihealth')]",
-			"type": "Microsoft.Synapse/workspaces/linkedServices",
-			"apiVersion": "2019-06-01-preview",
-			"properties": {
-				"annotations": [],
-				"type": "AzureBlobFS",
-				"typeProperties": {
-					"url": "[parameters('fauxunihealth_properties_typeProperties_url')]"
-				},
-				"connectVia": {
-					"referenceName": "AutoResolveIntegrationRuntime",
-					"type": "IntegrationRuntimeReference"
-				}
-			},
-			"dependsOn": [
-				"[concat(variables('workspaceId'), '/integrationRuntimes/AutoResolveIntegrationRuntime')]"
-			]
-		},
-		{
-			"name": "[concat(parameters('workspaceName'), '/Gold External Tables')]",
-			"type": "Microsoft.Synapse/workspaces/sqlscripts",
-			"apiVersion": "2019-06-01-preview",
-			"properties": {
-				"content": {
-					"query": "\nDROP EXTERNAL TABLE [gold].[PatientEncounters]\nCREATE EXTERNAL TABLE [gold].[PatientEncounters]\n(\n\t [Id] VARCHAR(64)\n)\nWITH\n(\n\tLOCATION = '/PatientEncounters',\n\tDATA_SOURCE = [Gold],\n\tFILE_FORMAT = [DELTA]\n)",
-					"metadata": {
-						"language": "sql"
-					},
-					"currentConnection": {
-						"databaseName": "ServerlessSQL",
-						"poolName": "Built-in"
-					},
-					"resultLimit": 5000
-				},
-				"type": "SqlQuery"
-			},
-			"dependsOn": []
-		},
-		{
-			"name": "[concat(parameters('workspaceName'), '/Silver External Tables')]",
-			"type": "Microsoft.Synapse/workspaces/sqlscripts",
-			"apiVersion": "2019-06-01-preview",
-			"properties": {
-				"content": {
-					"query": "\nDROP EXTERNAL TABLE [silver].[patients]\nCREATE EXTERNAL TABLE [silver].[patients]\n(\n\t[Id] VARCHAR(64),\n\tBirthDate\tDATE,\n\tDeathDate\tDATE,\n\tSSN\t\tVARCHAR(12),\n\tDrivers\tVARCHAR(2000),\n\tPassport\tVARCHAR(2000),\n\tPrefix\tVARCHAR(10),\n\tFirst\tVARCHAR(64),\n\tLast\tVARCHAR(64),\n\tSuffix\tVARCHAR(64),\n\tMaiden\tVARCHAR(64),\n\tMarital\tVARCHAR(64),\n\tRace\tVARCHAR(64),\n\tEthnicity\tVARCHAR(64),\n\tGender\tCHAR(2),\n\tBirthPlace\tVARCHAR(64),\n\tAddress\tVARCHAR(64),\n\tCity\tVARCHAR(64),\n\tState\tVARCHAR(64),\n\tCounty\tVARCHAR(64),\n\tFIPScountyCode\tVARCHAR(64),\n\tZip\t\tVARCHAR(64),\n\tLat\t\tVARCHAR(64),\n\tLong\tVARCHAR(64),\n\tHealthcare_Expenses\tVARCHAR(64),\n\tHealthcare_Coverage\tVARCHAR(64),\n\tIncome\tVARCHAR(64)\n)\nWITH\n(\n\tLOCATION = '/patients',\n\tDATA_SOURCE = [Silver],\n\tFILE_FORMAT = [DELTA]\n)\n\nDROP EXTERNAL TABLE [silver].[encounters]\nCREATE EXTERNAL TABLE [silver].[encounters]\n(\n\t [Id] VARCHAR(64)\n)\nWITH\n(\n\tLOCATION = '/encounters',\n\tDATA_SOURCE = [Silver],\n\tFILE_FORMAT = [DELTA]\n)\n",
-					"metadata": {
-						"language": "sql"
-					},
-					"currentConnection": {
-						"databaseName": "ServerlessSQL",
-						"poolName": "Built-in"
-					},
-					"resultLimit": 5000
-				},
-				"type": "SqlQuery"
-			},
-			"dependsOn": []
-		},
-		{
-			"name": "[concat(parameters('workspaceName'), '/ExternalDataSources')]",
-			"type": "Microsoft.Synapse/workspaces/sqlscripts",
-			"apiVersion": "2019-06-01-preview",
-			"properties": {
-				"content": {
-					"query": "create SCHEMA silver;\ncreate SCHEMA gold;\n\nCREATE EXTERNAL FILE FORMAT [DELTA] WITH\n(\n\tFORMAT_TYPE = DELTA\n)\n\nCREATE EXTERNAL DATA SOURCE Silver WITH\n(\n\tLOCATION = 'https://fauxunihealth.blob.core.windows.net/dl-silver'\n)\n\nCREATE EXTERNAL DATA SOURCE Gold WITH\n(\n\tLOCATION = 'https://fauxunihealth.blob.core.windows.net/dl-gold'\n)\n\n",
-					"metadata": {
-						"language": "sql"
-					},
-					"currentConnection": {
-						"databaseName": "ServerlessSQL",
-						"poolName": "Built-in"
-					},
-					"resultLimit": 5000
-				},
-				"type": "SqlQuery"
-			},
-			"dependsOn": []
-		},
-		{
-			"name": "[concat(parameters('workspaceName'), '/SQL script 2')]",
-			"type": "Microsoft.Synapse/workspaces/sqlscripts",
-			"apiVersion": "2019-06-01-preview",
-			"properties": {
-				"content": {
-					"query": "SELECT TOP (100) [Id]\n FROM [gold].[PatientEncounters]",
-					"metadata": {
-						"language": "sql"
-					},
-					"currentConnection": {
-						"databaseName": "ServerlessSQL",
-						"poolName": "Built-in"
-					}
-				}
-			},
-			"dependsOn": []
 		}
 	]
 }
