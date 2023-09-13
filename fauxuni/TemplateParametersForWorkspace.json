@@ -22,6 +22,9 @@
 		},
 		"sample-diabetes_sasUri": {
 			"value": ""
+		},
+		"fauxunihealth_properties_typeProperties_url": {
+			"value": "https://fauxunihealth.dfs.core.windows.net/"
 		}
 	}
 }
