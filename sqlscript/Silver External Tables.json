@@ -2,7 +2,7 @@
 	"name": "Silver External Tables",
 	"properties": {
 		"content": {
-			"query": "\n\nCREATE EXTERNAL TABLE [silver].[patients]\n(\n\t [Id] VARCHAR(64)\n)\nWITH\n(\n\tLOCATION = '/patients/**',\n\tDATA_SOURCE = [Silver],\n\tFILE_FORMAT = [DELTA]\n)\n\nCREATE EXTERNAL TABLE [silver].[encounters]\n(\n\t [Id] VARCHAR(64)\n)\nWITH\n(\n\tLOCATION = '/encounters/**',\n\tDATA_SOURCE = [Silver],\n\tFILE_FORMAT = [DELTA]\n)\n",
+			"query": "\nDROP EXTERNAL TABLE [silver].[patients]\nCREATE EXTERNAL TABLE [silver].[patients]\n(\n\t[Id] VARCHAR(64),\n\tBirthDate\tDATE,\n\tDeathDate\tDATE,\n\tSSN\t\tVARCHAR(12),\n\tDrivers\tVARCHAR(2000),\n\tPassport\tVARCHAR(2000),\n\tPrefix\tVARCHAR(10),\n\tFirst\tVARCHAR(64),\n\tLast\tVARCHAR(64),\n\tSuffix\tVARCHAR(64),\n\tMaiden\tVARCHAR(64),\n\tMarital\tVARCHAR(64),\n\tRace\tVARCHAR(64),\n\tEthnicity\tVARCHAR(64),\n\tGender\tCHAR(2),\n\tBirthPlace\tVARCHAR(64),\n\tAddress\tVARCHAR(64),\n\tCity\tVARCHAR(64),\n\tState\tVARCHAR(64),\n\tCounty\tVARCHAR(64),\n\tFIPScountyCode\tVARCHAR(64),\n\tZip\t\tVARCHAR(64),\n\tLat\t\tVARCHAR(64),\n\tLong\tVARCHAR(64),\n\tHealthcare_Expenses\tVARCHAR(64),\n\tHealthcare_Coverage\tVARCHAR(64),\n\tIncome\tVARCHAR(64)\n)\nWITH\n(\n\tLOCATION = '/patients',\n\tDATA_SOURCE = [Silver],\n\tFILE_FORMAT = [DELTA]\n)\n\nDROP EXTERNAL TABLE [silver].[encounters]\nCREATE EXTERNAL TABLE [silver].[encounters]\n(\n\t [Id] VARCHAR(64)\n)\nWITH\n(\n\tLOCATION = '/encounters',\n\tDATA_SOURCE = [Silver],\n\tFILE_FORMAT = [DELTA]\n)\n",
 			"metadata": {
 				"language": "sql"
 			},

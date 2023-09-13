@@ -2,7 +2,7 @@
 	"name": "Gold External Tables",
 	"properties": {
 		"content": {
-			"query": "\nCREATE EXTERNAL TABLE [gold].[PatientEncounters]\n(\n\t [Id] VARCHAR(64)\n)\nWITH\n(\n\tLOCATION = '/PatientEncounters/**',\n\tDATA_SOURCE = [Gold],\n\tFILE_FORMAT = [DELTA]\n)",
+			"query": "\nDROP EXTERNAL TABLE [gold].[PatientEncounters]\nCREATE EXTERNAL TABLE [gold].[PatientEncounters]\n(\n\t [Id] VARCHAR(64)\n)\nWITH\n(\n\tLOCATION = '/PatientEncounters',\n\tDATA_SOURCE = [Gold],\n\tFILE_FORMAT = [DELTA]\n)",
 			"metadata": {
 				"language": "sql"
 			},
