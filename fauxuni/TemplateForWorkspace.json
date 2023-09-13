@@ -279,6 +279,7 @@
 			},
 			"dependsOn": [
 				"[concat(variables('workspaceId'), '/dataflows/Patients')]",
+				"[concat(variables('workspaceId'), '/integrationRuntimes/AutoResolveIntegrationRuntime')]",
 				"[concat(variables('workspaceId'), '/dataflows/Encounters')]"
 			]
 		},
@@ -2204,6 +2205,84 @@
 			"dependsOn": [
 				"[concat(variables('workspaceId'), '/integrationRuntimes/AutoResolveIntegrationRuntime')]"
 			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/Gold External Tables')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"content": {
+					"query": "\nDROP EXTERNAL TABLE [gold].[PatientEncounters]\nCREATE EXTERNAL TABLE [gold].[PatientEncounters]\n(\n\t [Id] VARCHAR(64)\n)\nWITH\n(\n\tLOCATION = '/PatientEncounters',\n\tDATA_SOURCE = [Gold],\n\tFILE_FORMAT = [DELTA]\n)",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "ServerlessSQL",
+						"poolName": "Built-in"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/Silver External Tables')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"content": {
+					"query": "\nDROP EXTERNAL TABLE [silver].[patients]\nCREATE EXTERNAL TABLE [silver].[patients]\n(\n\t[Id] VARCHAR(64),\n\tBirthDate\tDATE,\n\tDeathDate\tDATE,\n\tSSN\t\tVARCHAR(12),\n\tDrivers\tVARCHAR(2000),\n\tPassport\tVARCHAR(2000),\n\tPrefix\tVARCHAR(10),\n\tFirst\tVARCHAR(64),\n\tLast\tVARCHAR(64),\n\tSuffix\tVARCHAR(64),\n\tMaiden\tVARCHAR(64),\n\tMarital\tVARCHAR(64),\n\tRace\tVARCHAR(64),\n\tEthnicity\tVARCHAR(64),\n\tGender\tCHAR(2),\n\tBirthPlace\tVARCHAR(64),\n\tAddress\tVARCHAR(64),\n\tCity\tVARCHAR(64),\n\tState\tVARCHAR(64),\n\tCounty\tVARCHAR(64),\n\tFIPScountyCode\tVARCHAR(64),\n\tZip\t\tVARCHAR(64),\n\tLat\t\tVARCHAR(64),\n\tLong\tVARCHAR(64),\n\tHealthcare_Expenses\tVARCHAR(64),\n\tHealthcare_Coverage\tVARCHAR(64),\n\tIncome\tVARCHAR(64)\n)\nWITH\n(\n\tLOCATION = '/patients',\n\tDATA_SOURCE = [Silver],\n\tFILE_FORMAT = [DELTA]\n)\n\nDROP EXTERNAL TABLE [silver].[encounters]\nCREATE EXTERNAL TABLE [silver].[encounters]\n(\n\t [Id] VARCHAR(64)\n)\nWITH\n(\n\tLOCATION = '/encounters',\n\tDATA_SOURCE = [Silver],\n\tFILE_FORMAT = [DELTA]\n)\n",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "ServerlessSQL",
+						"poolName": "Built-in"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/ExternalDataSources')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"content": {
+					"query": "create SCHEMA silver;\ncreate SCHEMA gold;\n\nCREATE EXTERNAL FILE FORMAT [DELTA] WITH\n(\n\tFORMAT_TYPE = DELTA\n)\n\nCREATE EXTERNAL DATA SOURCE Silver WITH\n(\n\tLOCATION = 'https://fauxunihealth.blob.core.windows.net/dl-silver'\n)\n\nCREATE EXTERNAL DATA SOURCE Gold WITH\n(\n\tLOCATION = 'https://fauxunihealth.blob.core.windows.net/dl-gold'\n)\n\n",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "ServerlessSQL",
+						"poolName": "Built-in"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/SQL script 2')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"content": {
+					"query": "SELECT TOP (100) [Id]\n FROM [gold].[PatientEncounters]",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "ServerlessSQL",
+						"poolName": "Built-in"
+					}
+				}
+			},
+			"dependsOn": []
 		}
 	]
 }
