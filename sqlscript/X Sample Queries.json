@@ -1,13 +1,13 @@
 {
-	"name": "SQL script 1",
+	"name": "X Sample Queries",
 	"properties": {
 		"content": {
-			"query": "\n/*\nselect BirthDate from Patients\n\nSELECT Id AS [rows]\nFROM OPENROWSET( \n    BULK '/**', \n    DATA_SOURCE = 'Silver',\n    FORMAT='delta' ) patients\n\nSELECT\nnyc.filename() AS [filename],COUNT_BIG(*) AS [rows]\nFROM\nOPENROWSET(\n    BULK 'parquet/taxi/year=2017/month=9/*.parquet',\n    DATA_SOURCE = 'SqlOnDemandDemo',\n    FORMAT='PARQUET'\n) nyc\nGROUP BY nyc.filename()\n*/",
+			"query": "/* Sample Cross medallion query */\n\nSELECT *\n    FROM Silver.Patients PA\n    JOIN Gold.PatientEncounters PE\n    ON PA.Id = PE.Patient\n\n\n",
 			"metadata": {
 				"language": "sql"
 			},
 			"currentConnection": {
-				"databaseName": "Silver",
+				"databaseName": "ServerlessSQL",
 				"poolName": "Built-in"
 			},
 			"resultLimit": 5000
