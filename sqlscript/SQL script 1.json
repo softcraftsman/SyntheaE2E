@@ -1,0 +1,17 @@
+{
+	"name": "SQL script 1",
+	"properties": {
+		"content": {
+			"query": "\n/*\nselect BirthDate from Patients\n\nSELECT Id AS [rows]\nFROM OPENROWSET( \n    BULK '/**', \n    DATA_SOURCE = 'Silver',\n    FORMAT='delta' ) patients\n\nSELECT\nnyc.filename() AS [filename],COUNT_BIG(*) AS [rows]\nFROM\nOPENROWSET(\n    BULK 'parquet/taxi/year=2017/month=9/*.parquet',\n    DATA_SOURCE = 'SqlOnDemandDemo',\n    FORMAT='PARQUET'\n) nyc\nGROUP BY nyc.filename()\n*/",
+			"metadata": {
+				"language": "sql"
+			},
+			"currentConnection": {
+				"databaseName": "Silver",
+				"poolName": "Built-in"
+			},
+			"resultLimit": 5000
+		},
+		"type": "SqlQuery"
+	}
+}
