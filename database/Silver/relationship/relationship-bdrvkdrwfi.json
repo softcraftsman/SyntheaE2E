@@ -1,0 +1,23 @@
+{
+	"name": "relationship-bdrvkdrwfi",
+	"properties": {
+		"Name": "relationship-bdrvkdrwfi",
+		"EntityType": "RELATIONSHIP",
+		"Namespace": {
+			"DatabaseName": "Silver"
+		},
+		"Origin": {
+			"Type": "SPARK"
+		},
+		"FromTableName": "Encounters",
+		"ToTableName": "Patients",
+		"ColumnRelationshipInformations": [
+			{
+				"FromColumnName": "Patient",
+				"ToColumnName": "Id"
+			}
+		],
+		"RelationshipType": 0
+	},
+	"type": "RELATIONSHIP"
+}

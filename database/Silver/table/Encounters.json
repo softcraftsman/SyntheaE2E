@@ -1,7 +1,7 @@
 {
-	"name": "Patients",
+	"name": "Encounters",
 	"properties": {
-		"Name": "Patients",
+		"Name": "Encounters",
 		"EntityType": "TABLE",
 		"Namespace": {
 			"DatabaseName": "Silver"
@@ -27,33 +27,33 @@
 					"DeltaFormatInvalidMessages": []
 				},
 				{
-					"Name": "BirthDate",
+					"Name": "Start",
 					"OriginDataTypeName": {
-						"TypeName": "date",
+						"TypeName": "timestamp",
 						"IsComplexType": false,
 						"IsNullable": true,
 						"Properties": {
-							"DateFormat": "YYYY-MM-DD",
-							"HIVE_TYPE_STRING": "date"
+							"TimestampFormat": "YYYY-MM-DD HH:MM:SS.fffffffff",
+							"HIVE_TYPE_STRING": "timestamp"
 						}
 					},
 					"DeltaFormatInvalidMessages": []
 				},
 				{
-					"Name": "DeathDate",
+					"Name": "Stop",
 					"OriginDataTypeName": {
-						"TypeName": "date",
+						"TypeName": "timestamp",
 						"IsComplexType": false,
 						"IsNullable": true,
 						"Properties": {
-							"DateFormat": "YYYY-MM-DD",
-							"HIVE_TYPE_STRING": "date"
+							"TimestampFormat": "YYYY-MM-DD HH:MM:SS.fffffffff",
+							"HIVE_TYPE_STRING": "timestamp"
 						}
 					},
 					"DeltaFormatInvalidMessages": []
 				},
 				{
-					"Name": "SSN",
+					"Name": "Patient",
 					"OriginDataTypeName": {
 						"TypeName": "string",
 						"IsComplexType": false,
@@ -66,7 +66,7 @@
 					"DeltaFormatInvalidMessages": []
 				},
 				{
-					"Name": "Drivers",
+					"Name": "Organization",
 					"OriginDataTypeName": {
 						"TypeName": "string",
 						"IsComplexType": false,
@@ -79,7 +79,7 @@
 					"DeltaFormatInvalidMessages": []
 				},
 				{
-					"Name": "Passport",
+					"Name": "Provider",
 					"OriginDataTypeName": {
 						"TypeName": "string",
 						"IsComplexType": false,
@@ -92,7 +92,7 @@
 					"DeltaFormatInvalidMessages": []
 				},
 				{
-					"Name": "Prefix",
+					"Name": "Payer",
 					"OriginDataTypeName": {
 						"TypeName": "string",
 						"IsComplexType": false,
@@ -105,7 +105,7 @@
 					"DeltaFormatInvalidMessages": []
 				},
 				{
-					"Name": "First",
+					"Name": "EncounterClass",
 					"OriginDataTypeName": {
 						"TypeName": "string",
 						"IsComplexType": false,
@@ -118,7 +118,7 @@
 					"DeltaFormatInvalidMessages": []
 				},
 				{
-					"Name": "Last",
+					"Name": "Code",
 					"OriginDataTypeName": {
 						"TypeName": "string",
 						"IsComplexType": false,
@@ -131,7 +131,7 @@
 					"DeltaFormatInvalidMessages": []
 				},
 				{
-					"Name": "Suffix",
+					"Name": "Description",
 					"OriginDataTypeName": {
 						"TypeName": "string",
 						"IsComplexType": false,
@@ -144,7 +144,7 @@
 					"DeltaFormatInvalidMessages": []
 				},
 				{
-					"Name": "Maiden",
+					"Name": "Base_Encounter_Cost",
 					"OriginDataTypeName": {
 						"TypeName": "string",
 						"IsComplexType": false,
@@ -157,7 +157,7 @@
 					"DeltaFormatInvalidMessages": []
 				},
 				{
-					"Name": "Marital",
+					"Name": "Total_Claim_Cost",
 					"OriginDataTypeName": {
 						"TypeName": "string",
 						"IsComplexType": false,
@@ -170,7 +170,7 @@
 					"DeltaFormatInvalidMessages": []
 				},
 				{
-					"Name": "Race",
+					"Name": "Payer_Coverage",
 					"OriginDataTypeName": {
 						"TypeName": "string",
 						"IsComplexType": false,
@@ -183,7 +183,7 @@
 					"DeltaFormatInvalidMessages": []
 				},
 				{
-					"Name": "Ethnicity",
+					"Name": "ReasonCode",
 					"OriginDataTypeName": {
 						"TypeName": "string",
 						"IsComplexType": false,
@@ -196,7 +196,7 @@
 					"DeltaFormatInvalidMessages": []
 				},
 				{
-					"Name": "Gender",
+					"Name": "ReasonDescription",
 					"OriginDataTypeName": {
 						"TypeName": "string",
 						"IsComplexType": false,
@@ -209,156 +209,13 @@
 					"DeltaFormatInvalidMessages": []
 				},
 				{
-					"Name": "BirthPlace",
+					"Name": "EncounterLength",
 					"OriginDataTypeName": {
-						"TypeName": "string",
-						"IsComplexType": false,
-						"IsNullable": true,
-						"Length": 8000,
-						"Properties": {
-							"HIVE_TYPE_STRING": "string"
-						}
-					},
-					"DeltaFormatInvalidMessages": []
-				},
-				{
-					"Name": "Address",
-					"OriginDataTypeName": {
-						"TypeName": "string",
-						"IsComplexType": false,
-						"IsNullable": true,
-						"Length": 8000,
-						"Properties": {
-							"HIVE_TYPE_STRING": "string"
-						}
-					},
-					"DeltaFormatInvalidMessages": []
-				},
-				{
-					"Name": "City",
-					"OriginDataTypeName": {
-						"TypeName": "string",
-						"IsComplexType": false,
-						"IsNullable": true,
-						"Length": 8000,
-						"Properties": {
-							"HIVE_TYPE_STRING": "string"
-						}
-					},
-					"DeltaFormatInvalidMessages": []
-				},
-				{
-					"Name": "State",
-					"OriginDataTypeName": {
-						"TypeName": "string",
-						"IsComplexType": false,
-						"IsNullable": true,
-						"Length": 8000,
-						"Properties": {
-							"HIVE_TYPE_STRING": "string"
-						}
-					},
-					"DeltaFormatInvalidMessages": []
-				},
-				{
-					"Name": "County",
-					"OriginDataTypeName": {
-						"TypeName": "string",
-						"IsComplexType": false,
-						"IsNullable": true,
-						"Length": 8000,
-						"Properties": {
-							"HIVE_TYPE_STRING": "string"
-						}
-					},
-					"DeltaFormatInvalidMessages": []
-				},
-				{
-					"Name": "FIPScountyCode",
-					"OriginDataTypeName": {
-						"TypeName": "string",
-						"IsComplexType": false,
-						"IsNullable": true,
-						"Length": 8000,
-						"Properties": {
-							"HIVE_TYPE_STRING": "string"
-						}
-					},
-					"DeltaFormatInvalidMessages": []
-				},
-				{
-					"Name": "Zip",
-					"OriginDataTypeName": {
-						"TypeName": "string",
-						"IsComplexType": false,
-						"IsNullable": true,
-						"Length": 8000,
-						"Properties": {
-							"HIVE_TYPE_STRING": "string"
-						}
-					},
-					"DeltaFormatInvalidMessages": []
-				},
-				{
-					"Name": "Lat",
-					"OriginDataTypeName": {
-						"TypeName": "string",
-						"IsComplexType": false,
-						"IsNullable": true,
-						"Length": 8000,
-						"Properties": {
-							"HIVE_TYPE_STRING": "string"
-						}
-					},
-					"DeltaFormatInvalidMessages": []
-				},
-				{
-					"Name": "Long",
-					"OriginDataTypeName": {
-						"TypeName": "string",
-						"IsComplexType": false,
-						"IsNullable": true,
-						"Length": 8000,
-						"Properties": {
-							"HIVE_TYPE_STRING": "string"
-						}
-					},
-					"DeltaFormatInvalidMessages": []
-				},
-				{
-					"Name": "Helthcare_Expenses",
-					"OriginDataTypeName": {
-						"TypeName": "string",
-						"IsComplexType": false,
-						"IsNullable": true,
-						"Length": 8000,
-						"Properties": {
-							"HIVE_TYPE_STRING": "string"
-						}
-					},
-					"DeltaFormatInvalidMessages": []
-				},
-				{
-					"Name": "Healthcare_Coverage",
-					"OriginDataTypeName": {
-						"TypeName": "string",
-						"IsComplexType": false,
-						"IsNullable": true,
-						"Length": 8000,
-						"Properties": {
-							"HIVE_TYPE_STRING": "string"
-						}
-					},
-					"DeltaFormatInvalidMessages": []
-				},
-				{
-					"Name": "Age",
-					"OriginDataTypeName": {
-						"TypeName": "integer",
+						"TypeName": "long",
 						"IsComplexType": false,
 						"IsNullable": true,
 						"Properties": {
-							"HIVE_TYPE_STRING": "integer"
+							"HIVE_TYPE_STRING": "long"
 						}
 					},
 					"DeltaFormatInvalidMessages": []
@@ -370,13 +227,13 @@
 				"FormatType": "parquet",
 				"SerializeLib": "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe",
 				"Properties": {
-					"path": "abfss://dl-silver@fauxunihealth.dfs.core.windows.net/patients",
+					"path": "abfss://dl-silver@fauxunihealth.dfs.core.windows.net/encounters",
 					"FormatTypeSetToDatabaseDefault": false
 				}
 			},
 			"Source": {
 				"Provider": "ADLS",
-				"Location": "abfss://dl-silver@fauxunihealth.dfs.core.windows.net/patients",
+				"Location": "abfss://dl-silver@fauxunihealth.dfs.core.windows.net/encounters",
 				"Properties": {
 					"LinkedServiceName": "fauxuni-WorkspaceDefaultStorage",
 					"LocationSetToDatabaseDefault": false
@@ -384,7 +241,7 @@
 			},
 			"Properties": {
 				"textinputformat.record.delimiter": ",",
-				"compression": "{\"type\":\"None\",\"level\":\"optimal\"}",
+				"compression": "",
 				"derivedModelAttributeInfo": "{\"attributeReferences\":{}}"
 			},
 			"Compressed": false,
