@@ -2,7 +2,7 @@
 	"name": "Gold External Tables",
 	"properties": {
 		"content": {
-			"query": "\nDROP EXTERNAL TABLE [gold].[PatientEncounters]\nCREATE EXTERNAL TABLE [gold].[PatientEncounters]\n(\n\t [Id] VARCHAR(64)\n)\nWITH\n(\n\tLOCATION = '/PatientEncounters',\n\tDATA_SOURCE = [Gold],\n\tFILE_FORMAT = [DELTA]\n)",
+			"query": "\nDROP EXTERNAL TABLE [gold].[PatientEncounters]\nCREATE EXTERNAL TABLE [gold].[PatientEncounters]\n(\n\t \tPatient VARCHAR(64),\n\t \tSSN VARCHAR(64),\n\t\tPrefix VARCHAR(64),\n\t\tFirst VARCHAR(64),\n\t\tLast VARCHAR(64),\n\t\tSuffix VARCHAR(64),\n\t\tMaiden VARCHAR(64),\n\t\tMarital VARCHAR(64),\n\t\tRace VARCHAR(64),\n\t\tEthnicity VARCHAR(64),\n\t\tGender VARCHAR(64),\n\t\tEncounter VARCHAR(64),\n\t\tStart VARCHAR(64),\n\t\tStop VARCHAR(64),\n\t\tOrganization VARCHAR(64),\n\t\tProvider VARCHAR(64),\n\t\tPayer VARCHAR(64),\n\t\tEncounterClass VARCHAR(64),\n\t\tCode VARCHAR(64),\n\t\tDescription VARCHAR(64),\n\t\tBase_Encounter_Cost VARCHAR(64),\n\t\tTotal_Claim_Cost VARCHAR(64),\n\t\tPayer_Coverage VARCHAR(64),\n\t\tReasonCode VARCHAR(64),\n\t\tReasonDescription VARCHAR(64),\n\t\tEncounterLength VARCHAR(64)\n)\nWITH\n(\n\tLOCATION = '/PatientEncounters',\n\tDATA_SOURCE = [Gold],\n\tFILE_FORMAT = [DELTA]\n)",
 			"metadata": {
 				"language": "sql"
 			},
