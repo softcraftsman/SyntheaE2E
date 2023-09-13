@@ -1,0 +1,17 @@
+{
+	"name": "Silver External Tables",
+	"properties": {
+		"content": {
+			"query": "\n\nCREATE EXTERNAL TABLE [silver].[patients]\n(\n\t [Id] VARCHAR(64)\n)\nWITH\n(\n\tLOCATION = '/patients/**',\n\tDATA_SOURCE = [Silver],\n\tFILE_FORMAT = [DELTA]\n)\n\nCREATE EXTERNAL TABLE [silver].[encounters]\n(\n\t [Id] VARCHAR(64)\n)\nWITH\n(\n\tLOCATION = '/encounters/**',\n\tDATA_SOURCE = [Silver],\n\tFILE_FORMAT = [DELTA]\n)\n",
+			"metadata": {
+				"language": "sql"
+			},
+			"currentConnection": {
+				"databaseName": "ServerlessSQL",
+				"poolName": "Built-in"
+			},
+			"resultLimit": 5000
+		},
+		"type": "SqlQuery"
+	}
+}

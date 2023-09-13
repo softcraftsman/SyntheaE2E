@@ -1,0 +1,17 @@
+{
+	"name": "ExternalDataSources",
+	"properties": {
+		"content": {
+			"query": "create SCHEMA silver;\ncreate SCHEMA gold;\n\nCREATE EXTERNAL FILE FORMAT [DELTA] WITH\n(\n\tFORMAT_TYPE = DELTA\n)\n\nCREATE EXTERNAL DATA SOURCE Silver WITH\n(\n\tLOCATION = 'https://fauxunihealth.blob.core.windows.net/dl-silver'\n)\n\nCREATE EXTERNAL DATA SOURCE Gold WITH\n(\n\tLOCATION = 'https://fauxunihealth.blob.core.windows.net/dl-gold'\n)\n\n",
+			"metadata": {
+				"language": "sql"
+			},
+			"currentConnection": {
+				"databaseName": "ServerlessSQL",
+				"poolName": "Built-in"
+			},
+			"resultLimit": 5000
+		},
+		"type": "SqlQuery"
+	}
+}

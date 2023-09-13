@@ -1,0 +1,17 @@
+{
+	"name": "Gold External Tables",
+	"properties": {
+		"content": {
+			"query": "\nCREATE EXTERNAL TABLE [gold].[PatientEncounters]\n(\n\t [Id] VARCHAR(64)\n)\nWITH\n(\n\tLOCATION = '/PatientEncounters/**',\n\tDATA_SOURCE = [Gold],\n\tFILE_FORMAT = [DELTA]\n)",
+			"metadata": {
+				"language": "sql"
+			},
+			"currentConnection": {
+				"databaseName": "ServerlessSQL",
+				"poolName": "Built-in"
+			},
+			"resultLimit": 5000
+		},
+		"type": "SqlQuery"
+	}
+}
