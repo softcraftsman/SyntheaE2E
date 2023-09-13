@@ -1,0 +1,27 @@
+{
+	"$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"workspaceName": {
+			"value": "fauxuni"
+		},
+		"AzureDataLakeStorage1_accountKey": {
+			"value": ""
+		},
+		"fauxuni-WorkspaceDefaultSqlServer_connectionString": {
+			"value": "Integrated Security=False;Encrypt=True;Connection Timeout=30;Data Source=tcp:fauxuni.sql.azuresynapse.net,1433;Initial Catalog=@{linkedService().DBName}"
+		},
+		"fauxuni_onprem_filestorage_connectionString": {
+			"value": ""
+		},
+		"AzureDataLakeStorage1_properties_typeProperties_url": {
+			"value": "https://fauxunistorage.dfs.core.windows.net/"
+		},
+		"fauxuni-WorkspaceDefaultStorage_properties_typeProperties_url": {
+			"value": "https://fauxunihealth.dfs.core.windows.net"
+		},
+		"sample-diabetes_sasUri": {
+			"value": ""
+		}
+	}
+}

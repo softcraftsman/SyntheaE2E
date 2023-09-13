@@ -1,0 +1,3323 @@
+{
+	"$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"workspaceName": {
+			"type": "string",
+			"metadata": "Workspace name",
+			"defaultValue": "fauxuni"
+		},
+		"AzureDataLakeStorage1_accountKey": {
+			"type": "secureString",
+			"metadata": "Secure string for 'accountKey' of 'AzureDataLakeStorage1'"
+		},
+		"fauxuni-WorkspaceDefaultSqlServer_connectionString": {
+			"type": "secureString",
+			"metadata": "Secure string for 'connectionString' of 'fauxuni-WorkspaceDefaultSqlServer'",
+			"defaultValue": "Integrated Security=False;Encrypt=True;Connection Timeout=30;Data Source=tcp:fauxuni.sql.azuresynapse.net,1433;Initial Catalog=@{linkedService().DBName}"
+		},
+		"fauxuni_onprem_filestorage_connectionString": {
+			"type": "secureString",
+			"metadata": "Secure string for 'connectionString' of 'fauxuni_onprem_filestorage'"
+		},
+		"AzureDataLakeStorage1_properties_typeProperties_url": {
+			"type": "string",
+			"defaultValue": "https://fauxunistorage.dfs.core.windows.net/"
+		},
+		"fauxuni-WorkspaceDefaultStorage_properties_typeProperties_url": {
+			"type": "string",
+			"defaultValue": "https://fauxunihealth.dfs.core.windows.net"
+		},
+		"sample-diabetes_sasUri": {
+			"type": "secureString",
+			"metadata": "Secure string for 'sasUri' of 'sample-diabetes'"
+		}
+	},
+	"variables": {
+		"workspaceId": "[concat('Microsoft.Synapse/workspaces/', parameters('workspaceName'))]"
+	},
+	"resources": [
+		{
+			"name": "[concat(parameters('workspaceName'), '/Copy from on-prem to Bronze')]",
+			"type": "Microsoft.Synapse/workspaces/pipelines",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"activities": [
+					{
+						"name": "Metadata",
+						"type": "Lookup",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "DelimitedTextSource",
+								"storeSettings": {
+									"type": "AzureBlobFSReadSettings",
+									"recursive": false,
+									"enablePartitionDiscovery": false
+								},
+								"formatSettings": {
+									"type": "DelimitedTextReadSettings"
+								}
+							},
+							"dataset": {
+								"referenceName": "Metadata_CSV",
+								"type": "DatasetReference",
+								"parameters": {
+									"filename": "metadata_bronze.csv",
+									"container": "dl-bronze"
+								}
+							},
+							"firstRowOnly": false
+						}
+					},
+					{
+						"name": "Loop over Tables",
+						"type": "ForEach",
+						"dependsOn": [
+							{
+								"activity": "Metadata",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"items": {
+								"value": "@activity('Metadata').output.value",
+								"type": "Expression"
+							},
+							"activities": [
+								{
+									"name": "Copy CSV into Parquet",
+									"type": "Copy",
+									"dependsOn": [],
+									"policy": {
+										"timeout": "0.12:00:00",
+										"retry": 0,
+										"retryIntervalInSeconds": 30,
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"source": {
+											"type": "DelimitedTextSource",
+											"storeSettings": {
+												"type": "AzureFileStorageReadSettings",
+												"recursive": true,
+												"wildcardFolderPath": {
+													"value": "@item().directory",
+													"type": "Expression"
+												},
+												"wildcardFileName": {
+													"value": "@item().filename",
+													"type": "Expression"
+												},
+												"enablePartitionDiscovery": false
+											},
+											"formatSettings": {
+												"type": "DelimitedTextReadSettings"
+											}
+										},
+										"sink": {
+											"type": "ParquetSink",
+											"storeSettings": {
+												"type": "AzureBlobFSWriteSettings",
+												"copyBehavior": "FlattenHierarchy"
+											},
+											"formatSettings": {
+												"type": "ParquetWriteSettings"
+											}
+										},
+										"enableStaging": false,
+										"translator": {
+											"type": "TabularTranslator",
+											"typeConversion": true,
+											"typeConversionSettings": {
+												"allowDataTruncation": true,
+												"treatBooleanAsNumber": false
+											}
+										}
+									},
+									"inputs": [
+										{
+											"referenceName": "tableCSV",
+											"type": "DatasetReference",
+											"parameters": {
+												"directory": {
+													"value": "@item().directory",
+													"type": "Expression"
+												},
+												"filename": "@item().filename",
+												"firstRowAsHeader": false
+											}
+										}
+									],
+									"outputs": [
+										{
+											"referenceName": "BronzeParquet",
+											"type": "DatasetReference",
+											"parameters": {
+												"Table": {
+													"value": "@item().table",
+													"type": "Expression"
+												}
+											}
+										}
+									]
+								}
+							]
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {},
+					"cancelAfter": {}
+				},
+				"annotations": [],
+				"lastPublishTime": "2023-09-08T02:16:17Z"
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/datasets/Metadata_CSV')]",
+				"[concat(variables('workspaceId'), '/datasets/tableCSV')]",
+				"[concat(variables('workspaceId'), '/datasets/BronzeParquet')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/Normalize Bronze to Silver')]",
+			"type": "Microsoft.Synapse/workspaces/pipelines",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"activities": [
+					{
+						"name": "Patients",
+						"type": "ExecuteDataFlow",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"dataflow": {
+								"referenceName": "Patients",
+								"type": "DataFlowReference",
+								"parameters": {},
+								"datasetParameters": {
+									"bronzeTable": {},
+									"silverTable": {}
+								}
+							},
+							"staging": {},
+							"compute": {
+								"coreCount": 8,
+								"computeType": "General"
+							},
+							"traceLevel": "Fine"
+						}
+					},
+					{
+						"name": "Encounters",
+						"type": "ExecuteDataFlow",
+						"dependsOn": [
+							{
+								"activity": "Patients",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"dataflow": {
+								"referenceName": "Encounters",
+								"type": "DataFlowReference",
+								"parameters": {},
+								"datasetParameters": {
+									"bronzeTable": {},
+									"silverTable": {}
+								}
+							},
+							"staging": {},
+							"compute": {
+								"coreCount": 8,
+								"computeType": "General"
+							},
+							"traceLevel": "Fine"
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {},
+					"cancelAfter": {}
+				},
+				"annotations": [],
+				"lastPublishTime": "2023-09-12T18:47:30Z"
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/dataflows/Patients')]",
+				"[concat(variables('workspaceId'), '/dataflows/Encounters')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/Silver to Gold')]",
+			"type": "Microsoft.Synapse/workspaces/pipelines",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"activities": [
+					{
+						"name": "PatientEncounters",
+						"type": "ExecuteDataFlow",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"dataflow": {
+								"referenceName": "PatientEncounters",
+								"type": "DataFlowReference",
+								"parameters": {},
+								"datasetParameters": {
+									"Patients": {},
+									"Encounters": {},
+									"WriteToGold": {}
+								}
+							},
+							"staging": {},
+							"compute": {
+								"coreCount": 8,
+								"computeType": "General"
+							},
+							"traceLevel": "Fine"
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {},
+					"cancelAfter": {}
+				},
+				"annotations": []
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/dataflows/PatientEncounters')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/BronzeParquet')]",
+			"type": "Microsoft.Synapse/workspaces/datasets",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "fauxuni-WorkspaceDefaultStorage",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"Table": {
+						"type": "string"
+					}
+				},
+				"folder": {
+					"name": "Bronze"
+				},
+				"annotations": [],
+				"type": "Parquet",
+				"typeProperties": {
+					"location": {
+						"type": "AzureBlobFSLocation",
+						"folderPath": {
+							"value": "@dataset().Table",
+							"type": "Expression"
+						},
+						"fileSystem": "dl-bronze"
+					},
+					"compressionCodec": "snappy"
+				},
+				"schema": []
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/linkedServices/fauxuni-WorkspaceDefaultStorage')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/EncountersBronze')]",
+			"type": "Microsoft.Synapse/workspaces/datasets",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "fauxuni-WorkspaceDefaultStorage",
+					"type": "LinkedServiceReference"
+				},
+				"folder": {
+					"name": "Bronze"
+				},
+				"annotations": [],
+				"type": "Parquet",
+				"typeProperties": {
+					"location": {
+						"type": "AzureBlobFSLocation",
+						"folderPath": "encounters",
+						"fileSystem": "dl-bronze"
+					},
+					"compressionCodec": "snappy"
+				},
+				"schema": [
+					{
+						"name": "Prop_0",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_1",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_2",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_3",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_4",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_5",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_6",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_7",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_8",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_9",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_10",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_11",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_12",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_13",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_14",
+						"type": "UTF8"
+					}
+				]
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/linkedServices/fauxuni-WorkspaceDefaultStorage')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/Metadata_CSV')]",
+			"type": "Microsoft.Synapse/workspaces/datasets",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "fauxuni-WorkspaceDefaultStorage",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"filename": {
+						"type": "string"
+					},
+					"container": {
+						"type": "string"
+					}
+				},
+				"folder": {
+					"name": "CSV"
+				},
+				"annotations": [],
+				"type": "DelimitedText",
+				"typeProperties": {
+					"location": {
+						"type": "AzureBlobFSLocation",
+						"fileName": {
+							"value": "@dataset().filename",
+							"type": "Expression"
+						},
+						"fileSystem": {
+							"value": "@dataset().container",
+							"type": "Expression"
+						}
+					},
+					"columnDelimiter": ",",
+					"escapeChar": "\\",
+					"firstRowAsHeader": true,
+					"quoteChar": "\""
+				},
+				"schema": [
+					{
+						"name": "Table",
+						"type": "String"
+					},
+					{
+						"name": "Directory",
+						"type": "String"
+					},
+					{
+						"name": "Filename",
+						"type": "String"
+					}
+				]
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/linkedServices/fauxuni-WorkspaceDefaultStorage')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/PatientBronze')]",
+			"type": "Microsoft.Synapse/workspaces/datasets",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "fauxuni-WorkspaceDefaultStorage",
+					"type": "LinkedServiceReference"
+				},
+				"folder": {
+					"name": "Bronze"
+				},
+				"annotations": [],
+				"type": "Parquet",
+				"typeProperties": {
+					"location": {
+						"type": "AzureBlobFSLocation",
+						"folderPath": "patients",
+						"fileSystem": "dl-bronze"
+					},
+					"compressionCodec": "snappy"
+				},
+				"schema": [
+					{
+						"name": "Prop_0",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_1",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_2",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_3",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_4",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_5",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_6",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_7",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_8",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_9",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_10",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_11",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_12",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_13",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_14",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_15",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_16",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_17",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_18",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_19",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_20",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_21",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_22",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_23",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_24",
+						"type": "UTF8"
+					},
+					{
+						"name": "Prop_25",
+						"type": "UTF8"
+					}
+				]
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/linkedServices/fauxuni-WorkspaceDefaultStorage')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/PatientCSV')]",
+			"type": "Microsoft.Synapse/workspaces/datasets",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "fauxuni_onprem_filestorage",
+					"type": "LinkedServiceReference"
+				},
+				"folder": {
+					"name": "CSV"
+				},
+				"annotations": [],
+				"type": "DelimitedText",
+				"typeProperties": {
+					"location": {
+						"type": "AzureFileStorageLocation",
+						"fileName": "patients.csv"
+					},
+					"columnDelimiter": ",",
+					"escapeChar": "\\",
+					"firstRowAsHeader": false,
+					"quoteChar": "\""
+				},
+				"schema": [
+					{
+						"type": "String"
+					},
+					{
+						"type": "String"
+					},
+					{
+						"type": "String"
+					},
+					{
+						"type": "String"
+					},
+					{
+						"type": "String"
+					},
+					{
+						"type": "String"
+					},
+					{
+						"type": "String"
+					},
+					{
+						"type": "String"
+					},
+					{
+						"type": "String"
+					}
+				]
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/linkedServices/fauxuni_onprem_filestorage')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/tableCSV')]",
+			"type": "Microsoft.Synapse/workspaces/datasets",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "fauxuni_onprem_filestorage",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"directory": {
+						"type": "string"
+					},
+					"filename": {
+						"type": "string"
+					},
+					"firstRowAsHeader": {
+						"type": "bool",
+						"defaultValue": false
+					}
+				},
+				"folder": {
+					"name": "CSV"
+				},
+				"annotations": [],
+				"type": "DelimitedText",
+				"typeProperties": {
+					"location": {
+						"type": "AzureFileStorageLocation",
+						"fileName": {
+							"value": "@dataset().filename",
+							"type": "Expression"
+						},
+						"folderPath": {
+							"value": "@dataset().directory",
+							"type": "Expression"
+						}
+					},
+					"columnDelimiter": ",",
+					"escapeChar": "\\",
+					"firstRowAsHeader": {
+						"value": "@dataset().firstRowAsHeader",
+						"type": "Expression"
+					},
+					"quoteChar": "\""
+				},
+				"schema": []
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/linkedServices/fauxuni_onprem_filestorage')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/AzureDataLakeStorage1')]",
+			"type": "Microsoft.Synapse/workspaces/linkedServices",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"annotations": [],
+				"type": "AzureBlobFS",
+				"typeProperties": {
+					"url": "[parameters('AzureDataLakeStorage1_properties_typeProperties_url')]",
+					"accountKey": {
+						"type": "SecureString",
+						"value": "[parameters('AzureDataLakeStorage1_accountKey')]"
+					}
+				},
+				"connectVia": {
+					"referenceName": "AutoResolveIntegrationRuntime",
+					"type": "IntegrationRuntimeReference"
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/integrationRuntimes/AutoResolveIntegrationRuntime')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/fauxuni-WorkspaceDefaultSqlServer')]",
+			"type": "Microsoft.Synapse/workspaces/linkedServices",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"parameters": {
+					"DBName": {
+						"type": "String"
+					}
+				},
+				"annotations": [],
+				"type": "AzureSqlDW",
+				"typeProperties": {
+					"connectionString": "[parameters('fauxuni-WorkspaceDefaultSqlServer_connectionString')]"
+				},
+				"connectVia": {
+					"referenceName": "AutoResolveIntegrationRuntime",
+					"type": "IntegrationRuntimeReference"
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/integrationRuntimes/AutoResolveIntegrationRuntime')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/fauxuni-WorkspaceDefaultStorage')]",
+			"type": "Microsoft.Synapse/workspaces/linkedServices",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"annotations": [],
+				"type": "AzureBlobFS",
+				"typeProperties": {
+					"url": "[parameters('fauxuni-WorkspaceDefaultStorage_properties_typeProperties_url')]"
+				},
+				"connectVia": {
+					"referenceName": "AutoResolveIntegrationRuntime",
+					"type": "IntegrationRuntimeReference"
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/integrationRuntimes/AutoResolveIntegrationRuntime')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/fauxuni_onprem_filestorage')]",
+			"type": "Microsoft.Synapse/workspaces/linkedServices",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"annotations": [],
+				"type": "AzureFileStorage",
+				"typeProperties": {
+					"connectionString": "[parameters('fauxuni_onprem_filestorage_connectionString')]",
+					"fileShare": "synthea-csv"
+				},
+				"connectVia": {
+					"referenceName": "AutoResolveIntegrationRuntime",
+					"type": "IntegrationRuntimeReference"
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/integrationRuntimes/AutoResolveIntegrationRuntime')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/sample-diabetes')]",
+			"type": "Microsoft.Synapse/workspaces/linkedServices",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"annotations": [],
+				"type": "AzureBlobStorage",
+				"typeProperties": {
+					"sasUri": "[parameters('sample-diabetes_sasUri')]"
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/AutoResolveIntegrationRuntime')]",
+			"type": "Microsoft.Synapse/workspaces/integrationRuntimes",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"type": "Managed",
+				"typeProperties": {
+					"computeProperties": {
+						"location": "AutoResolve",
+						"dataFlowProperties": {
+							"computeType": "General",
+							"coreCount": 8,
+							"timeToLive": 0
+						}
+					}
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/Encounters')]",
+			"type": "Microsoft.Synapse/workspaces/dataflows",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"folder": {
+					"name": "Bronze To Silver"
+				},
+				"type": "MappingDataFlow",
+				"typeProperties": {
+					"sources": [
+						{
+							"dataset": {
+								"referenceName": "EncountersBronze",
+								"type": "DatasetReference"
+							},
+							"name": "bronzeTable"
+						}
+					],
+					"sinks": [
+						{
+							"linkedService": {
+								"referenceName": "fauxuni-WorkspaceDefaultStorage",
+								"type": "LinkedServiceReference"
+							},
+							"name": "silverTable"
+						}
+					],
+					"transformations": [
+						{
+							"name": "AddColumnNames",
+							"description": "assport, Prefix, First, Last, Suffix, Maiden, Marital, Race, Ethnicity, Gender'"
+						},
+						{
+							"name": "forceUpsert"
+						},
+						{
+							"name": "CastDates"
+						},
+						{
+							"name": "DerivedColumns"
+						}
+					],
+					"scriptLines": [
+						"source(output(",
+						"          Prop_0 as string,",
+						"          Prop_1 as string,",
+						"          Prop_2 as string,",
+						"          Prop_3 as string,",
+						"          Prop_4 as string,",
+						"          Prop_5 as string,",
+						"          Prop_6 as string,",
+						"          Prop_7 as string,",
+						"          Prop_8 as string,",
+						"          Prop_9 as string,",
+						"          Prop_10 as string,",
+						"          Prop_11 as string,",
+						"          Prop_12 as string,",
+						"          Prop_13 as string,",
+						"          Prop_14 as string",
+						"     ),",
+						"     allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     ignoreNoFilesFound: false,",
+						"     format: 'parquet') ~> bronzeTable",
+						"bronzeTable select(mapColumn(",
+						"          Id = Prop_0,",
+						"          Start = Prop_1,",
+						"          Stop = Prop_2,",
+						"          Patient = Prop_3,",
+						"          Organization = Prop_4,",
+						"          Provider = Prop_5,",
+						"          Payer = Prop_6,",
+						"          EncounterClass = Prop_7,",
+						"          Code = Prop_8,",
+						"          Description = Prop_9,",
+						"          Base_Encounter_Cost = Prop_10,",
+						"          Total_Claim_Cost = Prop_11,",
+						"          Payer_Coverage = Prop_12,",
+						"          ReasonCode = Prop_13,",
+						"          ReasonDescription = Prop_14",
+						"     ),",
+						"     skipDuplicateMapInputs: true,",
+						"     skipDuplicateMapOutputs: true) ~> AddColumnNames",
+						"DerivedColumns alterRow(upsertIf(true())) ~> forceUpsert",
+						"AddColumnNames cast(output(",
+						"          Start as timestamp 'yyyy.MM.dd HH:mm:ss',",
+						"          Stop as timestamp 'yyyy.MM.dd HH:mm:ss'",
+						"     ),",
+						"     errors: true) ~> CastDates",
+						"CastDates derive(EncounterLength = Stop-Start) ~> DerivedColumns",
+						"forceUpsert sink(allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     format: 'delta',",
+						"     fileSystem: 'dl-silver',",
+						"     folderPath: 'encounters',",
+						"     mergeSchema: false,",
+						"     autoCompact: false,",
+						"     optimizedWrite: false,",
+						"     vacuum: 0,",
+						"     deletable: true,",
+						"     insertable: false,",
+						"     updateable: false,",
+						"     upsertable: true,",
+						"     keys:['Id'],",
+						"     umask: 0022,",
+						"     preCommands: [],",
+						"     postCommands: [],",
+						"     skipDuplicateMapInputs: true,",
+						"     skipDuplicateMapOutputs: true) ~> silverTable"
+					]
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/datasets/EncountersBronze')]",
+				"[concat(variables('workspaceId'), '/linkedServices/fauxuni-WorkspaceDefaultStorage')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/PatientEncounters')]",
+			"type": "Microsoft.Synapse/workspaces/dataflows",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"folder": {
+					"name": "Silver to Gold"
+				},
+				"type": "MappingDataFlow",
+				"typeProperties": {
+					"sources": [
+						{
+							"linkedService": {
+								"referenceName": "fauxuni-WorkspaceDefaultStorage",
+								"type": "LinkedServiceReference"
+							},
+							"name": "Patients"
+						},
+						{
+							"linkedService": {
+								"referenceName": "fauxuni-WorkspaceDefaultStorage",
+								"type": "LinkedServiceReference"
+							},
+							"name": "Encounters"
+						}
+					],
+					"sinks": [
+						{
+							"linkedService": {
+								"referenceName": "fauxuni-WorkspaceDefaultStorage",
+								"type": "LinkedServiceReference"
+							},
+							"name": "WriteToGold"
+						}
+					],
+					"transformations": [
+						{
+							"name": "PatientEncounters"
+						},
+						{
+							"name": "SlimPatientEncounters"
+						}
+					],
+					"scriptLines": [
+						"source(output(",
+						"          Id as string,",
+						"          BirthDate as string,",
+						"          DeathDate as string,",
+						"          SSN as string,",
+						"          Drivers as string,",
+						"          Passport as string,",
+						"          Prefix as string,",
+						"          First as string,",
+						"          Last as string,",
+						"          Suffix as string,",
+						"          Maiden as string,",
+						"          Marital as string,",
+						"          Race as string,",
+						"          Ethnicity as string,",
+						"          Gender as string,",
+						"          BirthPlace as string,",
+						"          Address as string,",
+						"          City as string,",
+						"          State as string,",
+						"          County as string,",
+						"          FIPScountyCode as string,",
+						"          Zip as string,",
+						"          Lat as string,",
+						"          Long as string,",
+						"          Helthcare_Expenses as string,",
+						"          Healthcare_Coverage as string",
+						"     ),",
+						"     allowSchemaDrift: false,",
+						"     validateSchema: false,",
+						"     limit: 100,",
+						"     ignoreNoFilesFound: true,",
+						"     format: 'delta',",
+						"     fileSystem: 'dl-silver',",
+						"     folderPath: 'patients') ~> Patients",
+						"source(output(",
+						"          Id as string,",
+						"          Start as timestamp,",
+						"          Stop as timestamp,",
+						"          Patient as string,",
+						"          Organization as string,",
+						"          Provider as string,",
+						"          Payer as string,",
+						"          EncounterClass as string,",
+						"          Code as string,",
+						"          Description as string,",
+						"          Base_Encounter_Cost as string,",
+						"          Total_Claim_Cost as string,",
+						"          Payer_Coverage as string,",
+						"          ReasonCode as string,",
+						"          ReasonDescription as string,",
+						"          EncounterLength as long",
+						"     ),",
+						"     allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     limit: 100,",
+						"     ignoreNoFilesFound: true,",
+						"     format: 'delta',",
+						"     fileSystem: 'dl-silver',",
+						"     folderPath: 'encounters') ~> Encounters",
+						"Patients, Encounters join(Patients@Id == Patient,",
+						"     joinType:'inner',",
+						"     matchType:'exact',",
+						"     ignoreSpaces: false,",
+						"     broadcast: 'auto')~> PatientEncounters",
+						"PatientEncounters select(mapColumn(",
+						"          Id = Patients@Id,",
+						"          SSN,",
+						"          Prefix,",
+						"          First,",
+						"          Last,",
+						"          Suffix,",
+						"          Maiden,",
+						"          Marital,",
+						"          Race,",
+						"          Ethnicity,",
+						"          Gender,",
+						"          Id = Encounters@Id,",
+						"          Start,",
+						"          Stop,",
+						"          Patient,",
+						"          Organization,",
+						"          Provider,",
+						"          Payer,",
+						"          EncounterClass,",
+						"          Code,",
+						"          Description,",
+						"          Base_Encounter_Cost,",
+						"          Total_Claim_Cost,",
+						"          Payer_Coverage,",
+						"          ReasonCode,",
+						"          ReasonDescription,",
+						"          EncounterLength",
+						"     ),",
+						"     skipDuplicateMapInputs: true,",
+						"     skipDuplicateMapOutputs: true) ~> SlimPatientEncounters",
+						"SlimPatientEncounters sink(allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     format: 'delta',",
+						"     compressionType: 'snappy',",
+						"     compressionLevel: 'Fastest',",
+						"     fileSystem: 'dl-gold',",
+						"     folderPath: 'PatientEncounters',",
+						"     overwrite: true,",
+						"     mergeSchema: false,",
+						"     autoCompact: false,",
+						"     optimizedWrite: false,",
+						"     vacuum: 0,",
+						"     deletable: false,",
+						"     insertable: true,",
+						"     updateable: false,",
+						"     upsertable: false,",
+						"     umask: 0022,",
+						"     preCommands: [],",
+						"     postCommands: [],",
+						"     skipDuplicateMapInputs: true,",
+						"     skipDuplicateMapOutputs: true) ~> WriteToGold"
+					]
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/linkedServices/fauxuni-WorkspaceDefaultStorage')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/Patients')]",
+			"type": "Microsoft.Synapse/workspaces/dataflows",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"folder": {
+					"name": "Bronze To Silver"
+				},
+				"type": "MappingDataFlow",
+				"typeProperties": {
+					"sources": [
+						{
+							"dataset": {
+								"referenceName": "PatientBronze",
+								"type": "DatasetReference"
+							},
+							"name": "bronzeTable"
+						}
+					],
+					"sinks": [
+						{
+							"linkedService": {
+								"referenceName": "fauxuni-WorkspaceDefaultStorage",
+								"type": "LinkedServiceReference"
+							},
+							"name": "silverTable"
+						}
+					],
+					"transformations": [
+						{
+							"name": "AddColumnNames"
+						},
+						{
+							"name": "forceUpsert"
+						},
+						{
+							"name": "CastToDate"
+						},
+						{
+							"name": "DerivedColumns"
+						},
+						{
+							"name": "RemoveDuplicateRows"
+						}
+					],
+					"scriptLines": [
+						"source(output(",
+						"          Prop_0 as string,",
+						"          Prop_1 as string,",
+						"          Prop_2 as string,",
+						"          Prop_3 as string,",
+						"          Prop_4 as string,",
+						"          Prop_5 as string,",
+						"          Prop_6 as string,",
+						"          Prop_7 as string,",
+						"          Prop_8 as string,",
+						"          Prop_9 as string,",
+						"          Prop_10 as string,",
+						"          Prop_11 as string,",
+						"          Prop_12 as string,",
+						"          Prop_13 as string,",
+						"          Prop_14 as string,",
+						"          Prop_15 as string,",
+						"          Prop_16 as string,",
+						"          Prop_17 as string,",
+						"          Prop_18 as string,",
+						"          Prop_19 as string,",
+						"          Prop_20 as string,",
+						"          Prop_21 as string,",
+						"          Prop_22 as string,",
+						"          Prop_23 as string,",
+						"          Prop_24 as string,",
+						"          Prop_25 as string",
+						"     ),",
+						"     allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     ignoreNoFilesFound: false,",
+						"     format: 'parquet') ~> bronzeTable",
+						"bronzeTable select(mapColumn(",
+						"          Id = Prop_0,",
+						"          BirthDate = Prop_1,",
+						"          DeathDate = Prop_2,",
+						"          SSN = Prop_3,",
+						"          Drivers = Prop_4,",
+						"          Passport = Prop_5,",
+						"          Prefix = Prop_6,",
+						"          First = Prop_7,",
+						"          Last = Prop_8,",
+						"          Suffix = Prop_9,",
+						"          Maiden = Prop_10,",
+						"          Marital = Prop_11,",
+						"          Race = Prop_12,",
+						"          Ethnicity = Prop_13,",
+						"          Gender = Prop_14,",
+						"          BirthPlace = Prop_15,",
+						"          Address = Prop_16,",
+						"          City = Prop_17,",
+						"          State = Prop_18,",
+						"          County = Prop_19,",
+						"          FIPScountyCode = Prop_20,",
+						"          Zip = Prop_21,",
+						"          Lat = Prop_22,",
+						"          Long = Prop_23,",
+						"          Helthcare_Expenses = Prop_24,",
+						"          Healthcare_Coverage = Prop_25",
+						"     ),",
+						"     skipDuplicateMapInputs: true,",
+						"     skipDuplicateMapOutputs: true) ~> AddColumnNames",
+						"DerivedColumns alterRow(upsertIf(true())) ~> forceUpsert",
+						"AddColumnNames cast(output(",
+						"          BirthDate as date 'yyyy/MM/dd',",
+						"          DeathDate as date 'yyyy.MM.dd'",
+						"     ),",
+						"     errors: true) ~> CastToDate",
+						"RemoveDuplicateRows derive(Age = iif( not(isNull(BirthDate)), currentDate() - BirthDate, -1)) ~> DerivedColumns",
+						"CastToDate aggregate(groupBy(Id),",
+						"     each(match(name!='Id'), $$ = last($$))) ~> RemoveDuplicateRows",
+						"forceUpsert sink(allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     format: 'delta',",
+						"     fileSystem: 'dl-silver',",
+						"     folderPath: 'patients',",
+						"     mergeSchema: true,",
+						"     autoCompact: true,",
+						"     optimizedWrite: false,",
+						"     vacuum: 0,",
+						"     deletable: true,",
+						"     insertable: true,",
+						"     updateable: true,",
+						"     upsertable: true,",
+						"     keys:['Id'],",
+						"     umask: 0022,",
+						"     preCommands: [],",
+						"     postCommands: [],",
+						"     skipDuplicateMapInputs: true,",
+						"     skipDuplicateMapOutputs: true) ~> silverTable"
+					]
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/datasets/PatientBronze')]",
+				"[concat(variables('workspaceId'), '/linkedServices/fauxuni-WorkspaceDefaultStorage')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/WorkspaceSystemIdentity')]",
+			"type": "Microsoft.Synapse/workspaces/credentials",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"type": "ManagedIdentity",
+				"typeProperties": {}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/Bronze to Silver')]",
+			"type": "Microsoft.Synapse/workspaces/notebooks",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"folder": {
+					"name": "Medallion"
+				},
+				"nbformat": 4,
+				"nbformat_minor": 2,
+				"bigDataPool": {
+					"referenceName": "smallSpark",
+					"type": "BigDataPoolReference"
+				},
+				"sessionProperties": {
+					"driverMemory": "28g",
+					"driverCores": 4,
+					"executorMemory": "28g",
+					"executorCores": 4,
+					"numExecutors": 2,
+					"runAsWorkspaceSystemIdentity": false,
+					"conf": {
+						"spark.dynamicAllocation.enabled": "false",
+						"spark.dynamicAllocation.minExecutors": "2",
+						"spark.dynamicAllocation.maxExecutors": "2",
+						"spark.autotune.trackingId": "f25b5d03-c9ce-4906-addc-55a96d65e2f8"
+					}
+				},
+				"metadata": {
+					"saveOutput": true,
+					"enableDebugMode": false,
+					"kernelspec": {
+						"name": "synapse_pyspark",
+						"display_name": "Synapse PySpark"
+					},
+					"language_info": {
+						"name": "python"
+					},
+					"a365ComputeOptions": {
+						"id": "/subscriptions/de4c6b08-3d24-452b-80f7-97b7ce4e37d1/resourceGroups/Healthcare/providers/Microsoft.Synapse/workspaces/fauxuni/bigDataPools/smallSpark",
+						"name": "smallSpark",
+						"type": "Spark",
+						"endpoint": "https://fauxuni.dev.azuresynapse.net/livyApi/versions/2019-11-01-preview/sparkPools/smallSpark",
+						"auth": {
+							"type": "AAD",
+							"authResource": "https://dev.azuresynapse.net"
+						},
+						"sparkVersion": "3.3",
+						"nodeCount": 10,
+						"cores": 4,
+						"memory": 28
+					},
+					"sessionKeepAliveTimeout": 30
+				},
+				"cells": [
+					{
+						"cell_type": "markdown",
+						"metadata": {
+							"nteract": {
+								"transient": {
+									"deleting": false
+								}
+							}
+						},
+						"source": [
+							"https://learn.microsoft.com/en-us/azure/synapse-analytics/spark/microsoft-spark-utilities?pivots=programming-language-python\r\n",
+							""
+						]
+					},
+					{
+						"cell_type": "code",
+						"metadata": {
+							"jupyter": {
+								"source_hidden": false,
+								"outputs_hidden": false
+							},
+							"nteract": {
+								"transient": {
+									"deleting": false
+								}
+							}
+						},
+						"source": [
+							"from pyspark.conf import SparkConf\r\n",
+							"from pyspark.sql import SparkSession"
+						],
+						"outputs": [],
+						"execution_count": 6
+					},
+					{
+						"cell_type": "code",
+						"metadata": {
+							"jupyter": {
+								"source_hidden": false,
+								"outputs_hidden": false
+							},
+							"nteract": {
+								"transient": {
+									"deleting": false
+								}
+							}
+						},
+						"source": [
+							"# Create Data Frame on Patient files\r\n",
+							"patientsFile = \"abfs://dl-bronze@fauxunihealth.dfs.core.windows.net/patients/*.parquet\"\r\n",
+							"dfPatients = spark.read.parquet(patientsFile)\r\n",
+							"dfPatients.show(n=5)\r\n",
+							"dfPatients.printSchema()"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"metadata": {
+							"jupyter": {
+								"source_hidden": false,
+								"outputs_hidden": false
+							},
+							"nteract": {
+								"transient": {
+									"deleting": false
+								}
+							}
+						},
+						"source": [
+							"# Create Data Frame on Encounter files\r\n",
+							"patientsFile = \"abfs://dl-bronze@fauxunihealth.dfs.core.windows.net/encounters/*.parquet\"\r\n",
+							"dfEncounters = spark.read.parquet(patientsFile)\r\n",
+							"dfEncounters.show(n=5)\r\n",
+							"dfEncounters.printSchema()"
+						],
+						"outputs": [],
+						"execution_count": 5
+					},
+					{
+						"cell_type": "code",
+						"metadata": {
+							"jupyter": {
+								"source_hidden": false,
+								"outputs_hidden": false
+							},
+							"nteract": {
+								"transient": {
+									"deleting": false
+								}
+							}
+						},
+						"source": [
+							".whenMatchedUpdate(set = \r\n",
+							"    {}).whenNotMatchedInsert( values = \r\n",
+							"    {\r\n",
+							"        \"countryOrRegion\" : \"hol_df_US.countryOrRegion\",\r\n",
+							"        \"holidayName\" : \"hol_df_US.holidayName\",\r\n",
+							"        \"normalizeHolidayName\" : \"hol_df_US.normalizeHolidayName\",\r\n",
+							"        \"isPaidTimeOff\":\"hol_df_US.isPaidTimeOff\",\r\n",
+							"        \"countryRegionCode\":\"hol_df_US.countryRegionCode\",\r\n",
+							"        \"date\":\"hol_df_US.date\"\r\n",
+							"    }\r\n",
+							"\r\n",
+							"\r\n",
+							"\r\n",
+							"# Write Data into Silver using Delta Format\r\n",
+							"silverTarget = \"abfs://dl-silver@fauxunihealth.dfs.core.windows.net/patients/\"\r\n",
+							"dfSilverPatients = dfPatients.write \\\r\n",
+							"                    .format(\"delta\") \\\r\n",
+							"\r\n",
+							"                    .save(silverTarget)\r\n",
+							"\r\n",
+							"dfSilverPatients.show()\r\n",
+							""
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"metadata": {
+							"jupyter": {
+								"source_hidden": false,
+								"outputs_hidden": false
+							},
+							"nteract": {
+								"transient": {
+									"deleting": false
+								}
+							}
+						},
+						"source": [
+							"# Write Data into Silver using Delta Format\r\n",
+							"silverTarget = \"abfs://dl-silver@fauxunihealth.dfs.core.windows.net/patients/\"\r\n",
+							"dfSilverPatients = dfPatients.write.format(\"delta\").save(silverTarget)\r\n",
+							"\r\n",
+							"dfSilverPatients.show()\r\n",
+							""
+						],
+						"outputs": [],
+						"execution_count": 7
+					},
+					{
+						"cell_type": "code",
+						"metadata": {
+							"jupyter": {
+								"source_hidden": false,
+								"outputs_hidden": false
+							},
+							"nteract": {
+								"transient": {
+									"deleting": false
+								}
+							}
+						},
+						"source": [
+							"file = \"abfs://dl-bronze@fauxunihealth.dfs.core.windows.net/\"\r\n",
+							"key = \"key\"\r\n",
+							"appName = \"DataExtract\"\r\n",
+							"master = \"local[*]\"\r\n",
+							"sparkConf = SparkConf() \\\r\n",
+							"    .setAppName(appName) \\\r\n",
+							"    .setMaster(master) \\\r\n",
+							"    .set(\"fs.azure.myaccount.key.myaccount.dfs.core.windows.net\", key)\r\n",
+							"\r\n",
+							"spark = SparkSession.builder.config(conf=sparkConf).getOrCreate()\r\n",
+							"\r\n",
+							"df = spark.read.text(file)\r\n",
+							"df.show()\r\n",
+							"\r\n",
+							"\r\n",
+							"\r\n",
+							"# Azure storage access info\r\n",
+							"blob_account_name = \"fauxunihealth\"\r\n",
+							"blob_container_name = \"dl-bronze\"\r\n",
+							"blob_relative_path = \"\"\r\n",
+							"blob_sas_token = r\"\"\r\n",
+							"\r\n",
+							"# Allow SPARK to read from Blob remotely\r\n",
+							"wasbs_path = 'wasbs://%s@%s.blob.core.windows.net/%s' % (blob_container_name, blob_account_name, blob_relative_path)\r\n",
+							"spark.conf.set(\r\n",
+							"  'fs.azure.sas.%s.%s.blob.core.windows.net' % (blob_container_name, blob_account_name),\r\n",
+							"  blob_sas_token)\r\n",
+							"print('Remote blob path: ' + wasbs_path)\r\n",
+							"\r\n",
+							"# SPARK read parquet, note that it won't load any data yet by now\r\n",
+							"\r\n",
+							"df = spark.read.parquet(wasbs_path)\r\n",
+							"df.write.format(\"delta\").saveAsTable(\"diabetes\")\r\n",
+							"     \r\n",
+							"\r\n",
+							""
+						],
+						"outputs": [],
+						"execution_count": null
+					}
+				]
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/Getting Started with Delta Lake')]",
+			"type": "Microsoft.Synapse/workspaces/notebooks",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"nbformat": 4,
+				"nbformat_minor": 2,
+				"sessionProperties": {
+					"driverMemory": "28g",
+					"driverCores": 4,
+					"executorMemory": "28g",
+					"executorCores": 4,
+					"numExecutors": 2,
+					"runAsWorkspaceSystemIdentity": false,
+					"conf": {
+						"spark.dynamicAllocation.enabled": "false",
+						"spark.dynamicAllocation.minExecutors": "2",
+						"spark.dynamicAllocation.maxExecutors": "2",
+						"spark.autotune.trackingId": "4e9a849b-86a2-445d-ae3c-31b786348f27"
+					}
+				},
+				"metadata": {
+					"saveOutput": true,
+					"synapse_widget": {
+						"version": "0.1"
+					},
+					"enableDebugMode": false,
+					"kernelspec": {
+						"name": "synapse_pyspark",
+						"display_name": "Synapse PySpark"
+					},
+					"language_info": {
+						"name": "python"
+					},
+					"sessionKeepAliveTimeout": 30
+				},
+				"cells": [
+					{
+						"cell_type": "markdown",
+						"source": [
+							"# Hitchhiker's Guide to Delta Lake (Python)\n",
+							"\n",
+							"This tutorial has been adapted for more clarity from its original counterpart [here](https://docs.delta.io/latest/quick-start.html). This notebook helps you quickly explore the main features of [Delta Lake](https://github.com/delta-io/delta). It provides code snippets that show how to read from and write to Delta Lake tables from interactive, batch, and streaming queries.\n",
+							"\n",
+							"Here's what we will cover:\n",
+							"* Create a table\n",
+							"* Understanding meta-data\n",
+							"* Read data\n",
+							"* Update table data\n",
+							"* Overwrite table data\n",
+							"* Conditional update without overwrite\n",
+							"* Read older versions of data using Time Travel\n",
+							"* Write a stream of data to a table\n",
+							"* Read a stream of changes from a table"
+						]
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"## Configuration\n",
+							"Make sure you modify this as appropriate."
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"import random\n",
+							"\n",
+							"session_id = random.randint(0,1000000)\n",
+							"delta_table_path = \"/delta/delta-table-{0}\".format(session_id)\n",
+							"\n",
+							"delta_table_path"
+						],
+						"outputs": [],
+						"execution_count": 1
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"## Create a table\n",
+							"To create a Delta Lake table, write a DataFrame out in the **delta** format. You can use existing Spark SQL code and change the format from parquet, csv, json, and so on, to delta.\n",
+							"\n",
+							"These operations create a new Delta Lake table using the schema that was inferred from your DataFrame. For the full set of options available when you create a new Delta Lake table, see Create a table and Write to a table (subsequent cells in this notebook)."
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"data = spark.range(0,5)\n",
+							"data.show()\n",
+							"data.write.format(\"delta\").save(delta_table_path)"
+						],
+						"outputs": [],
+						"execution_count": 2
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"## Understanding Meta-data\n",
+							"\n",
+							"In Delta Lake, meta-data is no different from data i.e., it is stored next to the data. Therefore, an interesting side-effect here is that you can peek into meta-data using regular Spark APIs. "
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"[log_line.value for log_line in spark.read.text(delta_table_path + \"/_delta_log/\").collect()]"
+						],
+						"outputs": [],
+						"execution_count": 3
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"## Read data\n",
+							"\n",
+							"You read data in your Delta Lake table by specifying the path to the files."
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"df = spark.read.format(\"delta\").load(delta_table_path)\n",
+							"df.show()"
+						],
+						"outputs": [],
+						"execution_count": 4
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"## Update table data\n",
+							"\n",
+							"Delta Lake supports several operations to modify tables using standard DataFrame APIs. This example runs a batch job to overwrite the data in the table.\n",
+							""
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"data = spark.range(5,10)\n",
+							"data.write.format(\"delta\").mode(\"overwrite\").save(delta_table_path)\n",
+							"df.show()"
+						],
+						"outputs": [],
+						"execution_count": 5
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"When you now inspect the meta-data, what you will notice is that the original data is over-written. Well, not in a true sense but appropriate entries are added to Delta's transaction log so it can provide an \"illusion\" that the original data was deleted. We can verify this by re-inspecting the meta-data. You will see several entries indicating reference removal to the original data."
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"[log_line.value for log_line in spark.read.text(delta_table_path + \"/_delta_log/\").collect()]"
+						],
+						"outputs": [],
+						"execution_count": 6
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"## Save as catalog tables\n",
+							"\n",
+							"Delta Lake can write to managed or external catalog tables."
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Write data to a new managed catalog table.\n",
+							"data.write.format(\"delta\").saveAsTable(\"ManagedDeltaTable\")"
+						],
+						"outputs": [],
+						"execution_count": 7
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Define an external catalog table that points to the existing Delta Lake data in storage.\n",
+							"spark.sql(\"CREATE TABLE ExternalDeltaTable USING DELTA LOCATION '{0}'\".format(delta_table_path))"
+						],
+						"outputs": [],
+						"execution_count": 8
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# List the 2 new tables.\n",
+							"spark.sql(\"SHOW TABLES\").show()\n",
+							"\n",
+							"# Explore their properties.\n",
+							"spark.sql(\"DESCRIBE EXTENDED ManagedDeltaTable\").show(truncate=False)\n",
+							"spark.sql(\"DESCRIBE EXTENDED ExternalDeltaTable\").show(truncate=False)"
+						],
+						"outputs": [],
+						"execution_count": 9
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"## Conditional update without overwrite\n",
+							"\n",
+							"Delta Lake provides programmatic APIs to conditional update, delete, and merge (upsert) data into tables. For more information on these operations, see [Table Deletes, Updates, and Merges](https://docs.delta.io/latest/delta-update.html)."
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"from delta.tables import *\n",
+							"from pyspark.sql.functions import *\n",
+							"\n",
+							"delta_table = DeltaTable.forPath(spark, delta_table_path)"
+						],
+						"outputs": [],
+						"execution_count": 10
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Update every even value by adding 100 to it\n",
+							"delta_table.update(\n",
+							"  condition = expr(\"id % 2 == 0\"),\n",
+							"  set = { \"id\": expr(\"id + 100\") })\n",
+							"delta_table.toDF().show()"
+						],
+						"outputs": [],
+						"execution_count": 11
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Delete every even value\n",
+							"delta_table.delete(\"id % 2 == 0\")\n",
+							"delta_table.toDF().show()"
+						],
+						"outputs": [],
+						"execution_count": 12
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Upsert (merge) new data\n",
+							"new_data = spark.range(0,20).alias(\"newData\")\n",
+							"\n",
+							"delta_table.alias(\"oldData\")\\\n",
+							"    .merge(new_data.alias(\"newData\"), \"oldData.id = newData.id\")\\\n",
+							"    .whenMatchedUpdate(set = { \"id\": lit(\"-1\")})\\\n",
+							"    .whenNotMatchedInsert(values = { \"id\": col(\"newData.id\") })\\\n",
+							"    .execute()\n",
+							"\n",
+							"delta_table.toDF().show(100)"
+						],
+						"outputs": [],
+						"execution_count": 13
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"## History\n",
+							"Delta's most powerful feature is the ability to allow looking into history i.e., the changes that were made to the underlying Delta Table. The cell below shows how simple it is to inspect the history."
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"delta_table.history().show(20, 1000, False)"
+						],
+						"outputs": [],
+						"execution_count": 14
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"## Read older versions of data using Time Travel\n",
+							"\n",
+							"You can query previous snapshots of your Delta Lake table by using a feature called Time Travel. If you want to access the data that you overwrote, you can query a snapshot of the table before you overwrote the first set of data using the versionAsOf option.\n",
+							"\n",
+							"Once you run the cell below, you should see the first set of data, from before you overwrote it. Time Travel is an extremely powerful feature that takes advantage of the power of the Delta Lake transaction log to access data that is no longer in the table. Removing the version 0 option (or specifying version 1) would let you see the newer data again. For more information, see [Query an older snapshot of a table (time travel)](https://docs.delta.io/latest/delta-batch.html#deltatimetravel)."
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"df = spark.read.format(\"delta\").option(\"versionAsOf\", 0).load(delta_table_path)\n",
+							"df.show()"
+						],
+						"outputs": [],
+						"execution_count": 15
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"## Write a stream of data to a table\n",
+							"\n",
+							"You can also write to a Delta Lake table using Spark's Structured Streaming. The Delta Lake transaction log guarantees exactly-once processing, even when there are other streams or batch queries running concurrently against the table. By default, streams run in append mode, which adds new records to the table.\n",
+							"\n",
+							"For more information about Delta Lake integration with Structured Streaming, see [Table Streaming Reads and Writes](https://docs.delta.io/latest/delta-streaming.html).\n",
+							"\n",
+							"In the cells below, here's what we are doing:\n",
+							"\n",
+							"1. *Cell 28* Setup a simple Spark Structured Streaming job to generate a sequence and make the job write into our Delta Table\n",
+							"2. *Cell 30* Show the newly appended data\n",
+							"3. *Cell 31* Inspect history\n",
+							"4. *Cell 32* Stop the structured streaming job\n",
+							"5. *Cell 33* Inspect history <-- You'll notice appends have stopped"
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"streaming_df = spark.readStream.format(\"rate\").load()\n",
+							"stream = streaming_df\\\n",
+							"    .selectExpr(\"value as id\")\\\n",
+							"    .writeStream\\\n",
+							"    .format(\"delta\")\\\n",
+							"    .option(\"checkpointLocation\", \"/tmp/checkpoint-{0}\".format(session_id))\\\n",
+							"    .start(delta_table_path)"
+						],
+						"outputs": [],
+						"execution_count": 16
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"## Read a stream of changes from a table\n",
+							"\n",
+							"While the stream is writing to the Delta Lake table, you can also read from that table as streaming source. For example, you can start another streaming query that prints all the changes made to the Delta Lake table."
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"delta_table.toDF().sort(col(\"id\").desc()).show(100)"
+						],
+						"outputs": [],
+						"execution_count": 17
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"delta_table.history().drop(\"userId\", \"userName\", \"job\", \"notebook\", \"clusterId\", \"isolationLevel\", \"isBlindAppend\").show(20, 1000, False)"
+						],
+						"outputs": [],
+						"execution_count": 18
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"stream.stop()"
+						],
+						"outputs": [],
+						"execution_count": 19
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"delta_table.history().drop(\"userId\", \"userName\", \"job\", \"notebook\", \"clusterId\", \"isolationLevel\", \"isBlindAppend\").show(100, 1000, False)"
+						],
+						"outputs": [],
+						"execution_count": 20
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"## Compaction\n",
+							"\n",
+							"If a Delta Table is growing too large, you can compact it by repartitioning into a smaller number of files.\n",
+							"\n",
+							"The option `dataChange = false` is an optimization that tells Delta Lake to do the repartition without marking the underlying data as \"modified\". This ensures that any other concurrent operations (such as streaming reads/writes) aren't negatively impacted.\n",
+							""
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"partition_count = 2\n",
+							"\n",
+							"spark.read\\\n",
+							"    .format(\"delta\")\\\n",
+							"    .load(delta_table_path)\\\n",
+							"    .repartition(partition_count)\\\n",
+							"    .write.option(\"dataChange\", \"false\")\\\n",
+							"    .format(\"delta\")\\\n",
+							"    .mode(\"overwrite\")\\\n",
+							"    .save(delta_table_path)    "
+						],
+						"outputs": [],
+						"execution_count": 21
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"## Convert Parquet to Delta\n",
+							"You can do an in-place conversion from the Parquet format to Delta."
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"parquet_path = \"/parquet/parquet-table-{0}\".format(session_id)\n",
+							"\n",
+							"data = spark.range(0,5)\n",
+							"data.write.parquet(parquet_path)\n",
+							"\n",
+							"# Confirm that the data isn't in the Delta format\n",
+							"DeltaTable.isDeltaTable(spark, parquet_path)"
+						],
+						"outputs": [],
+						"execution_count": 22
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"DeltaTable.convertToDelta(spark, \"parquet.`{0}`\".format(parquet_path))\n",
+							"\n",
+							"# Confirm that the converted data is now in the Delta format\n",
+							"DeltaTable.isDeltaTable(spark, parquet_path)"
+						],
+						"outputs": [],
+						"execution_count": 23
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"## SQL Support\n",
+							"Delta supports table utility commands through SQL.  You can use SQL to:\n",
+							"* Get a DeltaTable's history\n",
+							"* Vacuum a DeltaTable\n",
+							"* Convert a Parquet file to Delta\n",
+							""
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"spark.sql(\"DESCRIBE HISTORY delta.`{0}`\".format(delta_table_path)).show()"
+						],
+						"outputs": [],
+						"execution_count": 24
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"spark.sql(\"VACUUM delta.`{0}`\".format(delta_table_path)).show()"
+						],
+						"outputs": [],
+						"execution_count": 25
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"parquet_id = random.randint(0,1000)\n",
+							"parquet_path = \"/parquet/parquet-table-{0}-{1}\".format(session_id, parquet_path)\n",
+							"\n",
+							"data = spark.range(0,5)\n",
+							"data.write.parquet(parquet_path)\n",
+							"\n",
+							"# Confirm that the data isn't in the Delta format\n",
+							"DeltaTable.isDeltaTable(spark, parquet_path)\n",
+							"\n",
+							"# Use SQL to convert the parquet table to Delta\n",
+							"spark.sql(\"CONVERT TO DELTA parquet.`{0}`\".format(parquet_path))\n",
+							"\n",
+							"DeltaTable.isDeltaTable(spark, parquet_path)"
+						],
+						"outputs": [],
+						"execution_count": 26
+					}
+				]
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/Bronze')]",
+			"type": "Microsoft.Synapse/workspaces/databases",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"Ddls": [
+					{
+						"ActionType": "CREATE",
+						"OldEntity": null,
+						"NewEntity": {
+							"Name": "Bronze",
+							"EntityType": "DATABASE",
+							"Origin": {
+								"Type": "SPARK"
+							},
+							"Properties": {
+								"IsSyMSCDMDatabase": true
+							},
+							"Source": {
+								"Provider": "ADLS",
+								"Location": "abfss://dl-bronze@fauxunihealth.dfs.core.windows.net/",
+								"Properties": {
+									"FormatType": "parquet",
+									"LinkedServiceName": "fauxuni-WorkspaceDefaultStorage"
+								}
+							},
+							"PublishStatus": "PUBLISHED",
+							"ObjectVersion": 1,
+							"ObjectId": "3b2779ab-51de-46b9-98e9-b6a827e6b102"
+						},
+						"Source": {
+							"Type": "SPARK"
+						}
+					}
+				]
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/Gold')]",
+			"type": "Microsoft.Synapse/workspaces/databases",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"Ddls": [
+					{
+						"ActionType": "CREATE",
+						"OldEntity": null,
+						"NewEntity": {
+							"Name": "Gold",
+							"EntityType": "DATABASE",
+							"Origin": {
+								"Type": "SPARK"
+							},
+							"Properties": {
+								"IsSyMSCDMDatabase": true
+							},
+							"Source": {
+								"Provider": "ADLS",
+								"Location": "abfss://dl-gold@fauxunihealth.dfs.core.windows.net/",
+								"Properties": {
+									"FormatType": "parquet",
+									"LinkedServiceName": "fauxuni-WorkspaceDefaultStorage"
+								}
+							},
+							"PublishStatus": "PUBLISHED",
+							"ObjectVersion": 1,
+							"ObjectId": "32528d0d-6a9d-4775-b20b-980182352a20"
+						},
+						"Source": {
+							"Type": "SPARK"
+						}
+					},
+					{
+						"ActionType": "CREATE",
+						"OldEntity": null,
+						"NewEntity": {
+							"Name": "PatientEncounters",
+							"EntityType": "TABLE",
+							"Namespace": {
+								"DatabaseName": "Gold"
+							},
+							"Description": "",
+							"TableType": "EXTERNAL",
+							"Origin": {
+								"Type": "SPARK"
+							},
+							"StorageDescriptor": {
+								"Columns": [
+									{
+										"Name": "Id",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "SSN",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Prefix",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "First",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Last",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Suffix",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Maiden",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Marital",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Race",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Ethnicity",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Gender",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Start",
+										"OriginDataTypeName": {
+											"TypeName": "timestamp",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Properties": {
+												"TimestampFormat": "YYYY-MM-DD HH:MM:SS.fffffffff",
+												"HIVE_TYPE_STRING": "timestamp"
+											}
+										}
+									},
+									{
+										"Name": "Stop",
+										"OriginDataTypeName": {
+											"TypeName": "timestamp",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Properties": {
+												"TimestampFormat": "YYYY-MM-DD HH:MM:SS.fffffffff",
+												"HIVE_TYPE_STRING": "timestamp"
+											}
+										}
+									},
+									{
+										"Name": "Patient",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Organization",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Provider",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Payer",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "EncounterClass",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Code",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Description",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Base_Encounter_Cost",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Total_Claim_Cost",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Payer_Coverage",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "ReasonCode",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "ReasonDescription",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "EncounterLength",
+										"OriginDataTypeName": {
+											"TypeName": "long",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Properties": {
+												"HIVE_TYPE_STRING": "long"
+											}
+										}
+									}
+								],
+								"Format": {
+									"InputFormat": "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat",
+									"OutputFormat": "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat",
+									"FormatType": "parquet",
+									"SerializeLib": "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe",
+									"Properties": {
+										"path": "abfss://dl-gold@fauxunihealth.dfs.core.windows.net/PatientEncounters",
+										"FormatTypeSetToDatabaseDefault": false
+									}
+								},
+								"Source": {
+									"Provider": "ADLS",
+									"Location": "abfss://dl-gold@fauxunihealth.dfs.core.windows.net/PatientEncounters",
+									"Properties": {
+										"LinkedServiceName": "fauxuni-WorkspaceDefaultStorage",
+										"LocationSetToDatabaseDefault": false
+									}
+								},
+								"Properties": {
+									"textinputformat.record.delimiter": ",",
+									"compression": "",
+									"derivedModelAttributeInfo": "{\"attributeReferences\":{}}"
+								},
+								"Compressed": false,
+								"IsStoredAsSubdirectories": false
+							},
+							"Properties": {
+								"Description": "",
+								"DisplayFolderInfo": "{\"name\":\"Others\",\"colorCode\":\"\"}",
+								"PrimaryKeys": "",
+								"spark.sql.sources.provider": "parquet"
+							},
+							"Retention": 0,
+							"Temporary": false,
+							"IsRewriteEnabled": false
+						},
+						"Source": {
+							"Type": "SPARK"
+						}
+					}
+				]
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/Silver')]",
+			"type": "Microsoft.Synapse/workspaces/databases",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"Ddls": [
+					{
+						"ActionType": "CREATE",
+						"OldEntity": null,
+						"NewEntity": {
+							"Name": "Silver",
+							"EntityType": "DATABASE",
+							"Origin": {
+								"Type": "SPARK"
+							},
+							"Properties": {
+								"IsSyMSCDMDatabase": true
+							},
+							"Source": {
+								"Provider": "ADLS",
+								"Location": "abfss://dl-silver@fauxunihealth.dfs.core.windows.net/",
+								"Properties": {
+									"FormatType": "parquet",
+									"LinkedServiceName": "fauxuni-WorkspaceDefaultStorage"
+								}
+							},
+							"PublishStatus": "PUBLISHED",
+							"ObjectVersion": 1,
+							"ObjectId": "1f8c35d4-7cbc-494e-b7fa-7850227edbca"
+						},
+						"Source": {
+							"Type": "SPARK"
+						}
+					},
+					{
+						"ActionType": "CREATE",
+						"OldEntity": null,
+						"NewEntity": {
+							"Name": "Encounters",
+							"EntityType": "TABLE",
+							"Namespace": {
+								"DatabaseName": "Silver"
+							},
+							"Description": "",
+							"TableType": "EXTERNAL",
+							"Origin": {
+								"Type": "SPARK"
+							},
+							"StorageDescriptor": {
+								"Columns": [
+									{
+										"Name": "Id",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Start",
+										"OriginDataTypeName": {
+											"TypeName": "timestamp",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Properties": {
+												"TimestampFormat": "YYYY-MM-DD HH:MM:SS.fffffffff",
+												"HIVE_TYPE_STRING": "timestamp"
+											}
+										}
+									},
+									{
+										"Name": "Stop",
+										"OriginDataTypeName": {
+											"TypeName": "timestamp",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Properties": {
+												"TimestampFormat": "YYYY-MM-DD HH:MM:SS.fffffffff",
+												"HIVE_TYPE_STRING": "timestamp"
+											}
+										}
+									},
+									{
+										"Name": "Patient",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Organization",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Provider",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Payer",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "EncounterClass",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Code",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Description",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Base_Encounter_Cost",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Total_Claim_Cost",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Payer_Coverage",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "ReasonCode",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "ReasonDescription",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "EncounterLength",
+										"OriginDataTypeName": {
+											"TypeName": "long",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Properties": {
+												"HIVE_TYPE_STRING": "long"
+											}
+										}
+									}
+								],
+								"Format": {
+									"InputFormat": "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat",
+									"OutputFormat": "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat",
+									"FormatType": "parquet",
+									"SerializeLib": "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe",
+									"Properties": {
+										"path": "abfss://dl-silver@fauxunihealth.dfs.core.windows.net/encounters",
+										"FormatTypeSetToDatabaseDefault": false
+									}
+								},
+								"Source": {
+									"Provider": "ADLS",
+									"Location": "abfss://dl-silver@fauxunihealth.dfs.core.windows.net/encounters",
+									"Properties": {
+										"LinkedServiceName": "fauxuni-WorkspaceDefaultStorage",
+										"LocationSetToDatabaseDefault": false
+									}
+								},
+								"Properties": {
+									"textinputformat.record.delimiter": ",",
+									"compression": "",
+									"derivedModelAttributeInfo": "{\"attributeReferences\":{}}"
+								},
+								"Compressed": false,
+								"IsStoredAsSubdirectories": false
+							},
+							"Properties": {
+								"Description": "",
+								"DisplayFolderInfo": "{\"name\":\"Others\",\"colorCode\":\"\"}",
+								"PrimaryKeys": "",
+								"spark.sql.sources.provider": "parquet"
+							},
+							"Retention": 0,
+							"Temporary": false,
+							"IsRewriteEnabled": false
+						},
+						"Source": {
+							"Type": "SPARK"
+						}
+					},
+					{
+						"ActionType": "CREATE",
+						"OldEntity": null,
+						"NewEntity": {
+							"Name": "Patients",
+							"EntityType": "TABLE",
+							"Namespace": {
+								"DatabaseName": "Silver"
+							},
+							"Description": "",
+							"TableType": "EXTERNAL",
+							"Origin": {
+								"Type": "SPARK"
+							},
+							"StorageDescriptor": {
+								"Columns": [
+									{
+										"Name": "Id",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "BirthDate",
+										"OriginDataTypeName": {
+											"TypeName": "date",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Properties": {
+												"DateFormat": "YYYY-MM-DD",
+												"HIVE_TYPE_STRING": "date"
+											}
+										}
+									},
+									{
+										"Name": "DeathDate",
+										"OriginDataTypeName": {
+											"TypeName": "date",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Properties": {
+												"DateFormat": "YYYY-MM-DD",
+												"HIVE_TYPE_STRING": "date"
+											}
+										}
+									},
+									{
+										"Name": "SSN",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Drivers",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Passport",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Prefix",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "First",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Last",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Suffix",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Maiden",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Marital",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Race",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Ethnicity",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Gender",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "BirthPlace",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Address",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "City",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "State",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "County",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "FIPScountyCode",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Zip",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Lat",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Long",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Helthcare_Expenses",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Healthcare_Coverage",
+										"OriginDataTypeName": {
+											"TypeName": "string",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Length": 8000,
+											"Properties": {
+												"HIVE_TYPE_STRING": "string"
+											}
+										}
+									},
+									{
+										"Name": "Age",
+										"OriginDataTypeName": {
+											"TypeName": "integer",
+											"IsComplexType": false,
+											"IsNullable": true,
+											"Properties": {
+												"HIVE_TYPE_STRING": "integer"
+											}
+										}
+									}
+								],
+								"Format": {
+									"InputFormat": "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat",
+									"OutputFormat": "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat",
+									"FormatType": "parquet",
+									"SerializeLib": "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe",
+									"Properties": {
+										"path": "abfss://dl-silver@fauxunihealth.dfs.core.windows.net/patients",
+										"FormatTypeSetToDatabaseDefault": false
+									}
+								},
+								"Source": {
+									"Provider": "ADLS",
+									"Location": "abfss://dl-silver@fauxunihealth.dfs.core.windows.net/patients",
+									"Properties": {
+										"LinkedServiceName": "fauxuni-WorkspaceDefaultStorage",
+										"LocationSetToDatabaseDefault": false
+									}
+								},
+								"Properties": {
+									"textinputformat.record.delimiter": ",",
+									"compression": "{\"type\":\"None\",\"level\":\"optimal\"}",
+									"derivedModelAttributeInfo": "{\"attributeReferences\":{}}"
+								},
+								"Compressed": false,
+								"IsStoredAsSubdirectories": false
+							},
+							"Properties": {
+								"Description": "",
+								"DisplayFolderInfo": "{\"name\":\"Others\",\"colorCode\":\"\"}",
+								"PrimaryKeys": "",
+								"spark.sql.sources.provider": "parquet"
+							},
+							"Retention": 0,
+							"Temporary": false,
+							"IsRewriteEnabled": false
+						},
+						"Source": {
+							"Type": "SPARK"
+						}
+					},
+					{
+						"ActionType": "CREATE",
+						"OldEntity": null,
+						"NewEntity": {
+							"Name": "relationship-bdrvkdrwfi",
+							"EntityType": "RELATIONSHIP",
+							"Namespace": {
+								"DatabaseName": "Silver"
+							},
+							"Origin": {
+								"Type": "SPARK"
+							},
+							"FromTableName": "Encounters",
+							"ToTableName": "Patients",
+							"ColumnRelationshipInformations": [
+								{
+									"FromColumnName": "Patient",
+									"ToColumnName": "Id"
+								}
+							],
+							"RelationshipType": 0,
+							"Properties": {}
+						},
+						"Source": {
+							"Type": "SPARK"
+						}
+					}
+				]
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/smallSpark')]",
+			"type": "Microsoft.Synapse/workspaces/bigDataPools",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"autoPause": {
+					"enabled": true,
+					"delayInMinutes": 15
+				},
+				"autoScale": {
+					"enabled": true,
+					"maxNodeCount": 10,
+					"minNodeCount": 3
+				},
+				"nodeCount": 10,
+				"nodeSize": "Small",
+				"nodeSizeFamily": "MemoryOptimized",
+				"sparkVersion": "3.3",
+				"isComputeIsolationEnabled": false,
+				"sessionLevelPackagesEnabled": true,
+				"customLibraries": [
+					{
+						"name": "planetary_computer-0.5.1-py3-none-any.whl",
+						"path": "fauxuni/libraries/planetary_computer-0.5.1-py3-none-any.whl",
+						"containerName": "prep",
+						"uploadedTimestamp": "0001-01-01T00:00:00+00:00",
+						"type": "whl"
+					},
+					{
+						"name": "contextily-1.3.0-py3-none-any.whl",
+						"path": "fauxuni/libraries/contextily-1.3.0-py3-none-any.whl",
+						"containerName": "prep",
+						"uploadedTimestamp": "0001-01-01T00:00:00+00:00",
+						"type": "whl"
+					},
+					{
+						"name": "geopandas-0.13.0-py3-none-any.whl",
+						"path": "fauxuni/libraries/geopandas-0.13.0-py3-none-any.whl",
+						"containerName": "prep",
+						"uploadedTimestamp": "0001-01-01T00:00:00+00:00",
+						"type": "whl"
+					},
+					{
+						"name": "h5netcdf-1.1.0-py2.py3-none-any.whl",
+						"path": "fauxuni/libraries/h5netcdf-1.1.0-py2.py3-none-any.whl",
+						"containerName": "prep",
+						"uploadedTimestamp": "0001-01-01T00:00:00+00:00",
+						"type": "whl"
+					},
+					{
+						"name": "xarray-2023.4.2-py3-none-any.whl",
+						"path": "fauxuni/libraries/xarray-2023.4.2-py3-none-any.whl",
+						"containerName": "prep",
+						"uploadedTimestamp": "0001-01-01T00:00:00+00:00",
+						"type": "whl"
+					},
+					{
+						"name": "mapclassify-2.5.0-py3-none-any.whl",
+						"path": "fauxuni/libraries/mapclassify-2.5.0-py3-none-any.whl",
+						"containerName": "prep",
+						"uploadedTimestamp": "0001-01-01T00:00:00+00:00",
+						"type": "whl"
+					},
+					{
+						"name": "jupyter_book-0.15.1-py3-none-any.whl",
+						"path": "fauxuni/libraries/jupyter_book-0.15.1-py3-none-any.whl",
+						"containerName": "prep",
+						"uploadedTimestamp": "0001-01-01T00:00:00+00:00",
+						"type": "whl"
+					},
+					{
+						"name": "pooch-1.7.0-py3-none-any.whl",
+						"path": "fauxuni/libraries/pooch-1.7.0-py3-none-any.whl",
+						"containerName": "prep",
+						"uploadedTimestamp": "0001-01-01T00:00:00+00:00",
+						"type": "whl"
+					}
+				],
+				"annotations": []
+			},
+			"dependsOn": [],
+			"location": "eastus"
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/GpuSparkPool')]",
+			"type": "Microsoft.Synapse/workspaces/bigDataPools",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"autoPause": {
+					"enabled": true,
+					"delayInMinutes": 15
+				},
+				"autoScale": {
+					"enabled": true,
+					"maxNodeCount": 10,
+					"minNodeCount": 3
+				},
+				"nodeCount": 3,
+				"nodeSize": "Large",
+				"nodeSizeFamily": "HardwareAcceleratedGPU",
+				"sparkVersion": "3.2",
+				"isComputeIsolationEnabled": false,
+				"sessionLevelPackagesEnabled": false,
+				"annotations": []
+			},
+			"dependsOn": [],
+			"location": "eastus"
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/FauxSQL')]",
+			"type": "Microsoft.Synapse/workspaces/sqlPools",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"collation": "SQL_Latin1_General_CP1_CI_AS",
+				"maxSizeBytes": 263882790666240,
+				"annotations": []
+			},
+			"dependsOn": [],
+			"location": "eastus"
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/SQL script 1')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"content": {
+					"query": "\n/*\nselect BirthDate from Patients\n\nSELECT Id AS [rows]\nFROM OPENROWSET( \n    BULK '/**', \n    DATA_SOURCE = 'Silver',\n    FORMAT='delta' ) patients\n\nSELECT\nnyc.filename() AS [filename],COUNT_BIG(*) AS [rows]\nFROM\nOPENROWSET(\n    BULK 'parquet/taxi/year=2017/month=9/*.parquet',\n    DATA_SOURCE = 'SqlOnDemandDemo',\n    FORMAT='PARQUET'\n) nyc\nGROUP BY nyc.filename()\n*/",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "Silver",
+						"poolName": "Built-in"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		}
+	]
+}
