@@ -21,7 +21,7 @@
 				"spark.dynamicAllocation.enabled": "false",
 				"spark.dynamicAllocation.minExecutors": "2",
 				"spark.dynamicAllocation.maxExecutors": "2",
-				"spark.autotune.trackingId": "f25b5d03-c9ce-4906-addc-55a96d65e2f8"
+				"spark.autotune.trackingId": "cecb792e-e44a-4bdb-bf2b-ac4176f67d62"
 			}
 		},
 		"metadata": {
@@ -80,10 +80,9 @@
 					}
 				},
 				"source": [
-					"from pyspark.conf import SparkConf\r\n",
-					"from pyspark.sql import SparkSession"
+					"dfPatients.limit(1).show(vertical=True)"
 				],
-				"execution_count": 6
+				"execution_count": 4
 			},
 			{
 				"cell_type": "code",
@@ -99,13 +98,36 @@
 					}
 				},
 				"source": [
+					"from pyspark.conf import SparkConf\r\n",
+					"from pyspark.sql import SparkSession\r\n",
+					"from datetime import datetime\r\n",
+					"\r\n",
 					"# Create Data Frame on Patient files\r\n",
 					"patientsFile = \"abfs://dl-bronze@fauxunihealth.dfs.core.windows.net/patients/*.parquet\"\r\n",
 					"dfPatients = spark.read.parquet(patientsFile)\r\n",
-					"dfPatients.show(n=5)\r\n",
-					"dfPatients.printSchema()"
+					"\r\n",
+					"# Assign Column Names\r\n",
+					"#       https://github.com/synthetichealth/synthea/wiki/CSV-File-Data-Dictionary#patients\r\n",
+					"columnNames = ['Id','BirthDate','DeathDate','SSN','Drivers','Passport','Prefix','First','Last', \\\r\n",
+					"                'Suffix','Maiden','Marital','Race','Ethnicity','Gender','BirthPlace',   \\\r\n",
+					"                'Address','City','State','County','Zip','Lat','Long',  \\\r\n",
+					"                'Healthcare_Expenses', 'Healthcare_Coverage', 'Income'  \\\r\n",
+					"                ]\r\n",
+					"dfPatients = dfPatients.toDF(*columnNames)          # https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.DataFrame.toDF.html\r\n",
+					"\r\n",
+					"# Remove Duplicates\r\n",
+					"dfPatients = dfPatients.dropDuplicates()\r\n",
+					"\r\n",
+					"# Add Datatypes\r\n",
+					"dfPatients = dfPatients.withColumn(dfPatients.BirthDate.cast('timestamp'))\r\n",
+					"\r\n",
+					"\r\n",
+					"# Derived Columns\r\n",
+					"dfPatients = dfPatients.withColumn('Age', ((datetime.today() - dfPatients.BirthDate) / 365.25).cast('int') )\r\n",
+					"\r\n",
+					""
 				],
-				"execution_count": null
+				"execution_count": 17
 			},
 			{
 				"cell_type": "code",
@@ -121,125 +143,14 @@
 					}
 				},
 				"source": [
-					"# Create Data Frame on Encounter files\r\n",
-					"patientsFile = \"abfs://dl-bronze@fauxunihealth.dfs.core.windows.net/encounters/*.parquet\"\r\n",
-					"dfEncounters = spark.read.parquet(patientsFile)\r\n",
-					"dfEncounters.show(n=5)\r\n",
-					"dfEncounters.printSchema()"
-				],
-				"execution_count": 5
-			},
-			{
-				"cell_type": "code",
-				"metadata": {
-					"jupyter": {
-						"source_hidden": false,
-						"outputs_hidden": false
-					},
-					"nteract": {
-						"transient": {
-							"deleting": false
-						}
-					}
-				},
-				"source": [
-					".whenMatchedUpdate(set = \r\n",
-					"    {}).whenNotMatchedInsert( values = \r\n",
-					"    {\r\n",
-					"        \"countryOrRegion\" : \"hol_df_US.countryOrRegion\",\r\n",
-					"        \"holidayName\" : \"hol_df_US.holidayName\",\r\n",
-					"        \"normalizeHolidayName\" : \"hol_df_US.normalizeHolidayName\",\r\n",
-					"        \"isPaidTimeOff\":\"hol_df_US.isPaidTimeOff\",\r\n",
-					"        \"countryRegionCode\":\"hol_df_US.countryRegionCode\",\r\n",
-					"        \"date\":\"hol_df_US.date\"\r\n",
-					"    }\r\n",
-					"\r\n",
-					"\r\n",
-					"\r\n",
 					"# Write Data into Silver using Delta Format\r\n",
 					"silverTarget = \"abfs://dl-silver@fauxunihealth.dfs.core.windows.net/patients/\"\r\n",
 					"dfSilverPatients = dfPatients.write \\\r\n",
 					"                    .format(\"delta\") \\\r\n",
-					"\r\n",
+					"                    .mode(\"overwrite\") \\\r\n",
 					"                    .save(silverTarget)\r\n",
 					"\r\n",
 					"dfSilverPatients.show()\r\n",
-					""
-				],
-				"execution_count": null
-			},
-			{
-				"cell_type": "code",
-				"metadata": {
-					"jupyter": {
-						"source_hidden": false,
-						"outputs_hidden": false
-					},
-					"nteract": {
-						"transient": {
-							"deleting": false
-						}
-					}
-				},
-				"source": [
-					"# Write Data into Silver using Delta Format\r\n",
-					"silverTarget = \"abfs://dl-silver@fauxunihealth.dfs.core.windows.net/patients/\"\r\n",
-					"dfSilverPatients = dfPatients.write.format(\"delta\").save(silverTarget)\r\n",
-					"\r\n",
-					"dfSilverPatients.show()\r\n",
-					""
-				],
-				"execution_count": 7
-			},
-			{
-				"cell_type": "code",
-				"metadata": {
-					"jupyter": {
-						"source_hidden": false,
-						"outputs_hidden": false
-					},
-					"nteract": {
-						"transient": {
-							"deleting": false
-						}
-					}
-				},
-				"source": [
-					"file = \"abfs://dl-bronze@fauxunihealth.dfs.core.windows.net/\"\r\n",
-					"key = \"key\"\r\n",
-					"appName = \"DataExtract\"\r\n",
-					"master = \"local[*]\"\r\n",
-					"sparkConf = SparkConf() \\\r\n",
-					"    .setAppName(appName) \\\r\n",
-					"    .setMaster(master) \\\r\n",
-					"    .set(\"fs.azure.myaccount.key.myaccount.dfs.core.windows.net\", key)\r\n",
-					"\r\n",
-					"spark = SparkSession.builder.config(conf=sparkConf).getOrCreate()\r\n",
-					"\r\n",
-					"df = spark.read.text(file)\r\n",
-					"df.show()\r\n",
-					"\r\n",
-					"\r\n",
-					"\r\n",
-					"# Azure storage access info\r\n",
-					"blob_account_name = \"fauxunihealth\"\r\n",
-					"blob_container_name = \"dl-bronze\"\r\n",
-					"blob_relative_path = \"\"\r\n",
-					"blob_sas_token = r\"\"\r\n",
-					"\r\n",
-					"# Allow SPARK to read from Blob remotely\r\n",
-					"wasbs_path = 'wasbs://%s@%s.blob.core.windows.net/%s' % (blob_container_name, blob_account_name, blob_relative_path)\r\n",
-					"spark.conf.set(\r\n",
-					"  'fs.azure.sas.%s.%s.blob.core.windows.net' % (blob_container_name, blob_account_name),\r\n",
-					"  blob_sas_token)\r\n",
-					"print('Remote blob path: ' + wasbs_path)\r\n",
-					"\r\n",
-					"# SPARK read parquet, note that it won't load any data yet by now\r\n",
-					"\r\n",
-					"df = spark.read.parquet(wasbs_path)\r\n",
-					"df.write.format(\"delta\").saveAsTable(\"diabetes\")\r\n",
-					"     \r\n",
-					"\r\n",
 					""
 				],
 				"execution_count": null
