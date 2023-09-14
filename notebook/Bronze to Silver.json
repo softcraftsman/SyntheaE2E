@@ -21,7 +21,7 @@
 				"spark.dynamicAllocation.enabled": "false",
 				"spark.dynamicAllocation.minExecutors": "2",
 				"spark.dynamicAllocation.maxExecutors": "2",
-				"spark.autotune.trackingId": "cecb792e-e44a-4bdb-bf2b-ac4176f67d62"
+				"spark.autotune.trackingId": "cc735945-94d1-4812-ae42-de77782f005d"
 			}
 		},
 		"metadata": {
@@ -80,27 +80,9 @@
 					}
 				},
 				"source": [
-					"dfPatients.limit(1).show(vertical=True)"
-				],
-				"execution_count": 4
-			},
-			{
-				"cell_type": "code",
-				"metadata": {
-					"jupyter": {
-						"source_hidden": false,
-						"outputs_hidden": false
-					},
-					"nteract": {
-						"transient": {
-							"deleting": false
-						}
-					}
-				},
-				"source": [
 					"from pyspark.conf import SparkConf\r\n",
 					"from pyspark.sql import SparkSession\r\n",
-					"from datetime import datetime\r\n",
+					"from pyspark.sql.functions import *\r\n",
 					"\r\n",
 					"# Create Data Frame on Patient files\r\n",
 					"patientsFile = \"abfs://dl-bronze@fauxunihealth.dfs.core.windows.net/patients/*.parquet\"\r\n",
@@ -108,6 +90,7 @@
 					"\r\n",
 					"# Assign Column Names\r\n",
 					"#       https://github.com/synthetichealth/synthea/wiki/CSV-File-Data-Dictionary#patients\r\n",
+					"#       dfPatients.limit(1).show(vertical=True)\r\n",
 					"columnNames = ['Id','BirthDate','DeathDate','SSN','Drivers','Passport','Prefix','First','Last', \\\r\n",
 					"                'Suffix','Maiden','Marital','Race','Ethnicity','Gender','BirthPlace',   \\\r\n",
 					"                'Address','City','State','County','Zip','Lat','Long',  \\\r\n",
@@ -119,15 +102,15 @@
 					"dfPatients = dfPatients.dropDuplicates()\r\n",
 					"\r\n",
 					"# Add Datatypes\r\n",
-					"dfPatients = dfPatients.withColumn(dfPatients.BirthDate.cast('timestamp'))\r\n",
-					"\r\n",
+					"dfPatients = dfPatients \\\r\n",
+					"                .withColumn('BirthDate', dfPatients.BirthDate.cast('date')) \\\r\n",
+					"                .withColumn('DeathDate', dfPatients.DeathDate.cast('date'))\r\n",
 					"\r\n",
 					"# Derived Columns\r\n",
-					"dfPatients = dfPatients.withColumn('Age', ((datetime.today() - dfPatients.BirthDate) / 365.25).cast('int') )\r\n",
-					"\r\n",
+					"dfPatients = dfPatients.withColumn('Age', floor(datediff(current_date(), dfPatients.BirthDate) / 365.25).cast('int') )\r\n",
 					""
 				],
-				"execution_count": 17
+				"execution_count": 50
 			},
 			{
 				"cell_type": "code",
@@ -145,12 +128,12 @@
 				"source": [
 					"# Write Data into Silver using Delta Format\r\n",
 					"silverTarget = \"abfs://dl-silver@fauxunihealth.dfs.core.windows.net/patients/\"\r\n",
-					"dfSilverPatients = dfPatients.write \\\r\n",
+					"dfPatients.write \\\r\n",
 					"                    .format(\"delta\") \\\r\n",
 					"                    .mode(\"overwrite\") \\\r\n",
 					"                    .save(silverTarget)\r\n",
 					"\r\n",
-					"dfSilverPatients.show()\r\n",
+					"\r\n",
 					""
 				],
 				"execution_count": null
